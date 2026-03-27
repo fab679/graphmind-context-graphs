@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+coverage/
+.DS_Store
+
+
+
+graphmind-docs/
+
+Langchain TypeScript Docs/
+
+CLAUDE.md
+
+KILLER_FEATURE.md
+
+ARCHITECTURE.md
+
+.claude/
