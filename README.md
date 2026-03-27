@@ -55,28 +55,25 @@ const embeddingProvider: EmbeddingProvider = {
 const contextGraph = await createContextGraph({
   tenant: "my_company",
   project: "customer_support",
-  agent: "support-agent",                // Agent name for multi-agent tracking
+  agent: "support-agent", // Agent name for multi-agent tracking
   agentDescription: "Handles customer inquiries",
-  domain: "support",                      // Or omit to auto-infer
+  domain: "support", // Or omit to auto-infer
   embedding: {
     provider: embeddingProvider,
     dimensions: 1536,
   },
-  observerModel: "openai:gpt-4.1-mini",  // For ablation filtering (optional)
+  observerModel: "openai:gpt-4.1-mini", // For ablation filtering (optional)
 });
 
 // 3. Create your agent with context graph middleware
 const agent = createAgent({
   model: "openai:gpt-4.1",
   tools: [
-    tool(
-      ({ query }) => `Results for: ${query}`,
-      {
-        name: "search",
-        description: "Search the knowledge base",
-        schema: z.object({ query: z.string() }),
-      }
-    ),
+    tool(({ query }) => `Results for: ${query}`, {
+      name: "search",
+      description: "Search the knowledge base",
+      schema: z.object({ query: z.string() }),
+    }),
   ],
   middleware: contextGraph.middleware,
 });
@@ -100,27 +97,27 @@ await contextGraph.lifecycle.pruneFailures();
 ```typescript
 interface ContextGraphConfig {
   graphmind?: {
-    url?: string;          // Graphmind server URL (env: GRAPHMIND_URL)
-    token?: string;        // Bearer auth token (env: GRAPHMIND_TOKEN)
-    username?: string;     // Basic auth username (env: GRAPHMIND_USERNAME)
-    password?: string;     // Basic auth password (env: GRAPHMIND_PASSWORD)
+    url?: string; // Graphmind server URL (env: GRAPHMIND_URL)
+    token?: string; // Bearer auth token (env: GRAPHMIND_TOKEN)
+    username?: string; // Basic auth username (env: GRAPHMIND_USERNAME)
+    password?: string; // Basic auth password (env: GRAPHMIND_PASSWORD)
   };
-  tenant: string;                  // Tenant identifier (maps to graph namespace)
-  project: string;                 // Project identifier (within tenant)
-  domain?: string;                 // Explicit domain, or auto-inferred
-  agent?: string;                  // Agent name for multi-agent systems
-  agentDescription?: string;       // Human-readable agent role
-  contextSharing?: ContextSharingPolicy;  // "shared" | "isolated" | "selective"
-  allowedAgents?: string[];        // Agents to share with (selective mode)
+  tenant: string; // Tenant identifier (maps to graph namespace)
+  project: string; // Project identifier (within tenant)
+  domain?: string; // Explicit domain, or auto-inferred
+  agent?: string; // Agent name for multi-agent systems
+  agentDescription?: string; // Human-readable agent role
+  contextSharing?: ContextSharingPolicy; // "shared" | "isolated" | "selective"
+  allowedAgents?: string[]; // Agents to share with (selective mode)
   embedding: {
-    provider: EmbeddingProvider;   // Your embedding implementation
-    dimensions: number;            // Vector dimensions
+    provider: EmbeddingProvider; // Your embedding implementation
+    dimensions: number; // Vector dimensions
     metric?: "cosine" | "l2" | "dot";
   };
-  observerModel?: string;         // Model for ablation filtering
-  vectorSearchLimit?: number;     // Top-k results (default: 5)
-  similarityThreshold?: number;   // Min similarity for precedent linking (default: 0.7)
-  baseSystemPrompt?: string;      // Base system prompt
+  observerModel?: string; // Model for ablation filtering
+  vectorSearchLimit?: number; // Top-k results (default: 5)
+  similarityThreshold?: number; // Min similarity for precedent linking (default: 0.7)
+  baseSystemPrompt?: string; // Base system prompt
   debug?: boolean;
 }
 ```
@@ -129,13 +126,13 @@ interface ContextGraphConfig {
 
 Configuration can be provided via environment variables (loaded from `.env` automatically):
 
-| Variable | Description |
-|----------|-------------|
-| `GRAPHMIND_URL` | Graphmind server URL (default: `http://localhost:8080`) |
-| `GRAPHMIND_TOKEN` | Bearer auth token |
-| `GRAPHMIND_USERNAME` | Basic auth username |
-| `GRAPHMIND_PASSWORD` | Basic auth password |
-| `OPENAI_API_KEY` | Required for embedding provider and observer model |
+| Variable             | Description                                             |
+| -------------------- | ------------------------------------------------------- |
+| `GRAPHMIND_URL`      | Graphmind server URL (default: `http://localhost:8080`) |
+| `GRAPHMIND_TOKEN`    | Bearer auth token                                       |
+| `GRAPHMIND_USERNAME` | Basic auth username                                     |
+| `GRAPHMIND_PASSWORD` | Basic auth password                                     |
+| `OPENAI_API_KEY`     | Required for embedding provider and observer model      |
 
 ## Architecture
 
@@ -171,12 +168,12 @@ User → [Prompt Injector] → Agent → [Reasoning Extractor] → Context Graph
 
 Every decision is captured as a structured triplet:
 
-| Component | Description | Example |
-|-----------|-------------|---------|
-| **Intent** | The desired end-state | "Reset user password" |
-| **Constraint** | Blockers or rules | "Account is locked", "2FA required" |
-| **Action** | The move taken | "Sent reset email via admin panel" |
-| **Justification** | THE "WHY" | "Admin panel bypass used because account was locked" |
+| Component         | Description           | Example                                              |
+| ----------------- | --------------------- | ---------------------------------------------------- |
+| **Intent**        | The desired end-state | "Reset user password"                                |
+| **Constraint**    | Blockers or rules     | "Account is locked", "2FA required"                  |
+| **Action**        | The move taken        | "Sent reset email via admin panel"                   |
+| **Justification** | THE "WHY"             | "Admin panel bypass used because account was locked" |
 
 ### Core Components
 
@@ -206,14 +203,17 @@ const skills = await contextGraph.lifecycle.synthesizeSkills();
 // ["handle-account-lockout", "handle-rate-limiting"]
 
 // Add skill tools to your agent for on-demand loading
-import { createSkillTool, createListSkillsTool } from "graphmind-context-graphs";
+import {
+  createSkillTool,
+  createListSkillsTool,
+} from "graphmind-context-graphs";
 
 const agent = createAgent({
   model: "openai:gpt-4.1",
   tools: [
     ...yourTools,
-    createSkillTool(contextGraph.store),      // load_skill tool
-    createListSkillsTool(contextGraph.store),  // list_skills tool
+    createSkillTool(contextGraph.store), // load_skill tool
+    createListSkillsTool(contextGraph.store), // list_skills tool
   ],
   middleware: contextGraph.middleware,
 });
@@ -260,10 +260,10 @@ const techCG = await createContextGraph({
 
 ### Context Sharing Policies
 
-| Policy | Description | Use Case |
-|--------|-------------|----------|
-| `shared` | All agents see all traces (default) | Collaborative teams |
-| `isolated` | Agents see only their own traces | Privacy-sensitive domains |
+| Policy      | Description                             | Use Case                         |
+| ----------- | --------------------------------------- | -------------------------------- |
+| `shared`    | All agents see all traces (default)     | Collaborative teams              |
+| `isolated`  | Agents see only their own traces        | Privacy-sensitive domains        |
 | `selective` | Agents see own + allowed agents' traces | Controlled cross-domain learning |
 
 ## Multi-Tenancy
@@ -292,44 +292,44 @@ const tenantB = await createContextGraph({
 
 Factory function that initializes the context graph and returns:
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `middleware` | `Middleware[]` | Array of LangChain middleware to pass to `createAgent()` |
-| `registry` | `ContextualRegistry` | Direct access to context read/write operations |
-| `lifecycle` | `KnowledgeLifecycleManager` | Validate, synthesize, and prune traces |
-| `store` | `GraphmindStore` | Direct database access for advanced queries |
+| Property     | Type                        | Description                                              |
+| ------------ | --------------------------- | -------------------------------------------------------- |
+| `middleware` | `Middleware[]`              | Array of LangChain middleware to pass to `createAgent()` |
+| `registry`   | `ContextualRegistry`        | Direct access to context read/write operations           |
+| `lifecycle`  | `KnowledgeLifecycleManager` | Validate, synthesize, and prune traces                   |
+| `store`      | `GraphmindStore`            | Direct database access for advanced queries              |
 
 ### `GraphmindStore`
 
-| Method | Description |
-|--------|-------------|
-| `getToolStats()` | Get tool usage statistics for the project |
-| `getToolStatsByAgent(name)` | Get tool usage statistics for a specific agent |
-| `getAgentsByProject()` | Get all agents in the project |
-| `getConceptsByProject()` | Get all concept tags with trace counts |
-| `getTracesByConcept(name)` | Get all traces tagged with a concept |
-| `tagTraceWithConcept(id, name)` | Tag a trace with a concept |
-| `getSkillsByProject()` | Get all skills for the project |
-| `getSkillByName(name)` | Get a specific skill with full details |
+| Method                              | Description                                        |
+| ----------------------------------- | -------------------------------------------------- |
+| `getToolStats()`                    | Get tool usage statistics for the project          |
+| `getToolStatsByAgent(name)`         | Get tool usage statistics for a specific agent     |
+| `getAgentsByProject()`              | Get all agents in the project                      |
+| `getConceptsByProject()`            | Get all concept tags with trace counts             |
+| `getTracesByConcept(name)`          | Get all traces tagged with a concept               |
+| `tagTraceWithConcept(id, name)`     | Tag a trace with a concept                         |
+| `getSkillsByProject()`              | Get all skills for the project                     |
+| `getSkillByName(name)`              | Get a specific skill with full details             |
 | `findSimilarTraces(vector, limit?)` | Vector similarity search (respects sharing policy) |
 
 ### `KnowledgeLifecycleManager`
 
-| Method | Description |
-|--------|-------------|
-| `validateTrace(id, result)` | Record whether a trace's outcome was successful |
-| `synthesizeRules(options?)` | Promote high-confidence validated traces to permanent rules |
-| `synthesizeSkills(minTraces?)` | Auto-create skills from clustered synthesized traces |
-| `pruneFailures(options?)` | Mark low-confidence traces as anti-patterns |
-| `getLifecycleStats()` | Get counts by status (captured, validated, synthesized, etc.) |
+| Method                         | Description                                                   |
+| ------------------------------ | ------------------------------------------------------------- |
+| `validateTrace(id, result)`    | Record whether a trace's outcome was successful               |
+| `synthesizeRules(options?)`    | Promote high-confidence validated traces to permanent rules   |
+| `synthesizeSkills(minTraces?)` | Auto-create skills from clustered synthesized traces          |
+| `pruneFailures(options?)`      | Mark low-confidence traces as anti-patterns                   |
+| `getLifecycleStats()`          | Get counts by status (captured, validated, synthesized, etc.) |
 
 ### `ContextualRegistry`
 
-| Method | Description |
-|--------|-------------|
+| Method                       | Description                                                           |
+| ---------------------------- | --------------------------------------------------------------------- |
 | `getRelevantContext(intent)` | Retrieve past traces, rules, and anti-patterns by semantic similarity |
-| `recordDecision(trace)` | Save a new decision trace with auto-generated embeddings |
-| `isDiscoveryMode()` | Check if this is the first-ever decision (no prior traces) |
+| `recordDecision(trace)`      | Save a new decision trace with auto-generated embeddings              |
+| `isDiscoveryMode()`          | Check if this is the first-ever decision (no prior traces)            |
 
 ## Examples
 
@@ -348,6 +348,7 @@ npm run example:multi-domain
 ```
 
 Runs three agents (legal, medical, tech) in the same project demonstrating:
+
 - Cross-domain context sharing
 - Domain-specific tool usage
 - Agent and tool call visualization
@@ -395,6 +396,18 @@ npm run build
 npm run dev
 ```
 
+## ❤️ Sponsor GraphMind
+
+If GraphMind is useful to you, consider sponsoring:
+
+👉 https://github.com/sponsors/fab679
+
+Your support helps:
+
+- Improve performance & scaling
+- Expand OpenCypher support
+- Build LLM-native graph features
+
 ## License
 
-MIT
+Apache License 2.0
