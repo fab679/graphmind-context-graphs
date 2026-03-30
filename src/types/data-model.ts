@@ -151,4 +151,50 @@ export interface FormattedContext {
   antiPatterns: DecisionTrace[];
   /** Available skills (lightweight manifest for progressive disclosure). */
   skills: Skill[];
+  /** Current graph schema overview — helps agents understand existing entities. */
+  schema?: SchemaOverview;
+}
+
+// ── Dynamic Entity Layer ──────────────────────────────────────────────────────
+// Agents create these over time to map their understanding of a domain.
+// Unlike the fixed triplet model, these are freeform and domain-specific.
+
+/** A dynamic entity created by an agent to map domain knowledge. */
+export interface GraphEntity {
+  id?: string;
+  /** Node label (e.g., "CodeFile", "APIEndpoint", "Patient", "Contract"). */
+  label: string;
+  /** Properties as key-value pairs. */
+  properties: Record<string, string | number | boolean>;
+  /** Which agent created this entity. */
+  createdBy?: string;
+  createdAt: string;
+}
+
+/** A dynamic relationship between two entities. */
+export interface GraphRelationship {
+  id?: string;
+  /** Source entity node ID or label+property identifier. */
+  sourceId: string;
+  /** Target entity node ID or label+property identifier. */
+  targetId: string;
+  /** Relationship type (e.g., "DEPENDS_ON", "TREATS", "IMPORTS"). */
+  type: string;
+  /** Properties on the relationship edge. */
+  properties?: Record<string, string | number | boolean>;
+  /** Which agent created this relationship. */
+  createdBy?: string;
+  createdAt: string;
+}
+
+/** Schema overview returned by Graphmind's schema() API. */
+export interface SchemaOverview {
+  /** Node labels present in the graph (e.g., ["DecisionTrace", "Intent", "CodeFile"]). */
+  nodeLabels: string[];
+  /** Relationship types present (e.g., ["HAS_INTENT", "DEPENDS_ON"]). */
+  relationshipTypes: string[];
+  /** Node count by label. */
+  nodeCounts: Record<string, number>;
+  /** Edge count by type. */
+  edgeCounts: Record<string, number>;
 }

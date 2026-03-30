@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graphmind Context Graphs — The AI That Actually Remembers Why</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@400;500&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0a0a0f;
+    --paper: #f5f2ea;
+    --accent: #c8421a;
+    --accent2: #1a6bc8;
+    --muted: #8a8070;
+    --rule: #d4cfc3;
+    --highlight: #fff3cd;
+    --card-bg: #ffffff;
+    --code-bg: #1a1a24;
+    --code-fg: #a8d4b0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 19px;
+    line-height: 1.75;
+    min-height: 100vh;
+  }
+
+  /* Grain texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    padding: 18px 0;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .masthead-brand {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .masthead-dot {
+    width: 4px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .masthead-date {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* HERO */
+  .hero {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 80px 32px 60px;
+    position: relative;
+  }
+
+  .hero-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hero-tag::before {
+    content: '';
+    display: inline-block;
+    width: 24px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  h1 {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: clamp(38px, 7vw, 72px);
+    line-height: 1.08;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 28px;
+    max-width: 780px;
+  }
+
+  h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .hero-deck {
+    font-size: 22px;
+    line-height: 1.55;
+    color: #3a3530;
+    max-width: 620px;
+    margin-bottom: 40px;
+    font-family: 'Instrument Serif', Georgia, serif;
+  }
+
+  .hero-meta {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+
+  .hero-meta strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* CONTENT */
+  .content {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 32px 100px;
+  }
+
+  /* Section headers */
+  .section-number {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin-bottom: 20px;
+    margin-top: 72px;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 40px;
+    margin-bottom: 12px;
+    letter-spacing: 0.01em;
+  }
+
+  p {
+    margin-bottom: 22px;
+    color: #1e1b14;
+  }
+
+  p + p {
+    text-indent: 0;
+  }
+
+  /* Horizontal rule */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 60px 0;
+  }
+
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  .divider span {
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  /* Pull quote */
+  .pull-quote {
+    border-left: 3px solid var(--accent);
+    padding: 4px 0 4px 28px;
+    margin: 40px 0;
+  }
+
+  .pull-quote p {
+    font-size: 26px;
+    line-height: 1.4;
+    font-style: italic;
+    color: #1a1510;
+    margin-bottom: 0;
+  }
+
+  /* Highlight box */
+  .callout {
+    background: var(--card-bg);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent2);
+    padding: 28px 32px;
+    margin: 36px 0;
+    border-radius: 2px;
+  }
+
+  .callout-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .callout p {
+    margin-bottom: 0;
+    font-size: 17px;
+    line-height: 1.65;
+  }
+
+  /* Code block */
+  .code-block {
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: 24px 28px;
+    margin: 28px 0;
+    overflow-x: auto;
+  }
+
+  .code-block code {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--code-fg);
+    white-space: pre;
+    display: block;
+  }
+
+  .code-block .comment { color: #5a6a5a; }
+  .code-block .key { color: #88b4d4; }
+  .code-block .value { color: #d4a86a; }
+  .code-block .keyword { color: #c882a8; }
+
+  /* Comparison table */
+  .comparison {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 36px 0;
+    font-size: 16px;
+  }
+
+  .comparison thead tr {
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .comparison th {
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    text-align: left;
+  }
+
+  .comparison th:first-child {
+    width: 30%;
+  }
+
+  .comparison td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    line-height: 1.5;
+    font-family: 'Instrument Serif', Georgia, serif;
+  }
+
+  .comparison tr:last-child td {
+    border-bottom: none;
+  }
+
+  .comparison .bad {
+    color: #a04020;
+  }
+
+  .comparison .good {
+    color: #1a6030;
+  }
+
+  /* Step list */
+  .steps {
+    list-style: none;
+    margin: 28px 0;
+    counter-reset: steps;
+  }
+
+  .steps li {
+    counter-increment: steps;
+    padding: 20px 20px 20px 64px;
+    position: relative;
+    border-bottom: 1px solid var(--rule);
+    font-size: 17px;
+    line-height: 1.6;
+  }
+
+  .steps li:last-child {
+    border-bottom: none;
+  }
+
+  .steps li::before {
+    content: counter(steps, decimal-leading-zero);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    position: absolute;
+    left: 20px;
+    top: 22px;
+    font-weight: 500;
+  }
+
+  .steps li strong {
+    display: block;
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-bottom: 4px;
+  }
+
+  /* Feature grid */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 36px 0;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .feature-card {
+    background: var(--card-bg);
+    padding: 28px 26px;
+  }
+
+  .feature-card-icon {
+    font-size: 24px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .feature-card h4 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .feature-card p {
+    font-size: 15px;
+    line-height: 1.6;
+    color: #4a4030;
+    margin-bottom: 0;
+  }
+
+  /* Triplet diagram */
+  .triplet {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin: 36px 0;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .triplet-node {
+    padding: 22px 18px;
+    border-right: 1px solid var(--rule);
+    text-align: center;
+  }
+
+  .triplet-node:last-child {
+    border-right: none;
+    background: #fff8f0;
+    border-left: 2px solid var(--accent);
+  }
+
+  .triplet-node .label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .triplet-node .value {
+    font-family: 'Instrument Serif', serif;
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+
+  .triplet-node:last-child .label {
+    color: var(--accent);
+  }
+
+  .triplet-node:last-child .value {
+    font-style: italic;
+    font-weight: 500;
+  }
+
+  /* Arrow connectors */
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 28px 0;
+    overflow-x: auto;
+    padding: 4px 0;
+  }
+
+  .flow-node {
+    background: var(--card-bg);
+    border: 1px solid var(--rule);
+    padding: 12px 18px;
+    border-radius: 2px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    text-align: center;
+    white-space: nowrap;
+    min-width: 100px;
+  }
+
+  .flow-node.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .flow-arrow-line {
+    color: var(--muted);
+    font-size: 18px;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+
+  /* CTA */
+  .cta-block {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 48px 40px;
+    margin: 60px 0 0;
+    border-radius: 2px;
+  }
+
+  .cta-block h3 {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 32px;
+    font-weight: 400;
+    line-height: 1.25;
+    margin-bottom: 16px;
+    margin-top: 0;
+    color: var(--paper);
+  }
+
+  .cta-block p {
+    color: #a09880;
+    font-size: 17px;
+    margin-bottom: 28px;
+    max-width: 460px;
+  }
+
+  .cta-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .cta-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    padding: 6px 14px;
+    border: 1px solid #3a3530;
+    border-radius: 999px;
+    color: #a09880;
+  }
+
+  /* fade-in animation */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero > * {
+    animation: fadeUp 0.7s ease both;
+  }
+
+  .hero > *:nth-child(1) { animation-delay: 0.05s; }
+  .hero > *:nth-child(2) { animation-delay: 0.15s; }
+  .hero > *:nth-child(3) { animation-delay: 0.25s; }
+  .hero > *:nth-child(4) { animation-delay: 0.35s; }
+
+  @media (max-width: 600px) {
+    .triplet { grid-template-columns: 1fr 1fr; }
+    .feature-grid { grid-template-columns: 1fr; }
+    .flow-arrow { flex-direction: column; }
+    .flow-arrow-line { transform: rotate(90deg); }
+    h1 { font-size: 36px; }
+    .hero-deck { font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <span class="masthead-brand">Graphmind</span>
+  <span class="masthead-dot"></span>
+  <span class="masthead-date">Technical Deep-Dive</span>
+  <span class="masthead-dot"></span>
+  <span class="masthead-date">2026</span>
+</header>
+
+<section class="hero">
+  <div class="hero-tag">Context Graph Middleware</div>
+  <h1>The AI Agent That Knows <em>Why</em>,<br>Not Just What</h1>
+  <p class="hero-deck">
+    Your agents don't have a memory problem. They have a reasoning problem.
+    Context Graphs give AI agents a persistent layer of <em>why</em> &mdash;
+    turning amnesiacs into domain experts that build institutional wisdom
+    with every run.
+  </p>
+  <div class="hero-meta">
+    <span><strong>Reading time</strong> &mdash; 9 min</span>
+    <span><strong>Audience</strong> &mdash; Engineers &amp; AI practitioners</span>
+    <span><strong>Topic</strong> &mdash; Agent architecture, context engineering</span>
+  </div>
+</section>
+
+<main class="content">
+
+  <!-- INTRO: THE PROBLEM -->
+  <p>
+    Every AI agent built today suffers from the same invisible flaw. Ask it to fix a bug,
+    and it will. Ask it to refactor the same code tomorrow, and it will break the edge case
+    it fixed yesterday &mdash; because it has no idea <em>why</em> that code was written
+    the way it was.
+  </p>
+
+  <p>
+    Standard agent memory stores transcripts: logs of inputs, outputs, tool calls. It is
+    a diary. But a diary does not make you wise. It just makes you long-winded. The agent
+    remembers <em>what</em> happened but has lost the reasoning behind every decision it made.
+  </p>
+
+  <p>
+    Graphmind Context Graphs solve this by introducing a fundamentally different kind
+    of memory. Instead of recording events, the middleware captures and curates
+    <strong>Decision Traces</strong> &mdash; structured records of intent, constraints,
+    actions, and the justifications that tie them together.
+  </p>
+
+  <div class="pull-quote">
+    <p>"A Context Graph is a Director's Commentary for your AI agent &mdash;
+    the reasoning layer most agents are missing entirely."</p>
+  </div>
+
+
+  <!-- 01: WHAT CONTEXT GRAPHS ARE -->
+  <span class="section-number">01 &mdash; THE CORE IDEA</span>
+  <h2>Middleware That Thinks in Two Directions</h2>
+
+  <p>
+    The Context Graph sits as a stateful proxy between the user and the LangChain agent.
+    It operates in two directions simultaneously:
+  </p>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <span class="feature-card-icon">Inward</span>
+      <h4>Prompt Injection</h4>
+      <p>Before every model call, the middleware queries the graph for past reasoning traces,
+        established rules, anti-patterns to avoid, and available skills. It prepends them
+        to the system prompt as structured context &mdash; the agent's accumulated wisdom,
+        delivered at the moment it matters.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-card-icon">Outward</span>
+      <h4>Reasoning Extraction</h4>
+      <p>After the agent responds, the middleware observes the chain of thought
+        and distills the raw output into structured Decision Traces. With an optional
+        Observer LLM, the extractor performs structured extraction of domain, concepts,
+        and constraints. Without it, heuristic classifiers infer domain from keywords
+        and extract concepts via pattern matching. Only the reasoning that actually
+        mattered gets saved.</p>
+    </div>
+  </div>
+
+  <p>
+    This creates a self-improving loop. Each agent run enriches the graph, and each
+    enrichment makes the next run smarter &mdash; not through fine-tuning the model,
+    but through structured accumulation of verified reasoning.
+  </p>
+
+
+  <!-- 02: THE TRIPLET MODEL -->
+  <span class="section-number">02 &mdash; THE TRIPLET MODEL</span>
+  <h2>Intent, Constraint, Action, Justification</h2>
+
+  <p>
+    Every decision the agent makes is decomposed into four components. This is
+    the <strong>Triplet</strong> &mdash; the universal building block of the Context Graph:
+  </p>
+
+  <div class="triplet">
+    <div class="triplet-node">
+      <span class="label">Intent</span>
+      <span class="value">Deploy<br>to production</span>
+    </div>
+    <div class="triplet-node">
+      <span class="label">Constraint</span>
+      <span class="value">Staging had<br>intermittent failures</span>
+    </div>
+    <div class="triplet-node">
+      <span class="label">Action</span>
+      <span class="value">Ran CI pipeline<br>with rollback enabled</span>
+    </div>
+    <div class="triplet-node">
+      <span class="label">Justification &mdash; The Why</span>
+      <span class="value">"Tests passed but staging risk justified rollback failsafe"</span>
+    </div>
+  </div>
+
+  <p>
+    This model is domain-agnostic by design. Constraints come in three universal types:
+    <strong>blockers</strong> (errors, timeouts, permission walls),
+    <strong>permissions</strong> (approvals, auth requirements), and
+    <strong>pivots</strong> (context shifts that change the approach, like urgency or user emotion).
+    A "Statute of Limitations" in law and an "API Timeout" in tech are the same class of
+    constraint &mdash; a blocker. The same architecture works for Legal, Medical, Tech, and
+    Finance agents without modification.
+  </p>
+
+
+  <!-- 03: DYNAMIC BRAIN MAPPING -->
+  <div class="divider"><span>*</span></div>
+
+  <span class="section-number">03 &mdash; THE KILLER FEATURE</span>
+  <h2>Dynamic Brain Mapping</h2>
+
+  <p>
+    Decision traces capture the <em>reasoning</em> behind actions. But agents also need
+    to capture the <em>territory</em> they operate in &mdash; the entities, relationships,
+    and structure of the domain itself. This is Dynamic Brain Mapping: the agent's ability
+    to discover and record domain-specific knowledge that was never defined ahead of time.
+  </p>
+
+  <p>
+    Using <code style="font-family:'DM Mono',monospace;font-size:15px">create_entity</code>
+    and <code style="font-family:'DM Mono',monospace;font-size:15px">create_relationship</code>,
+    agents create arbitrary nodes and edges in the graph as they work. A coding agent might
+    create <code style="font-family:'DM Mono',monospace;font-size:15px">CodeFile</code>,
+    <code style="font-family:'DM Mono',monospace;font-size:15px">APIEndpoint</code>, and
+    <code style="font-family:'DM Mono',monospace;font-size:15px">Dependency</code> entities.
+    A legal agent might discover
+    <code style="font-family:'DM Mono',monospace;font-size:15px">Contract</code>,
+    <code style="font-family:'DM Mono',monospace;font-size:15px">Clause</code>, and
+    <code style="font-family:'DM Mono',monospace;font-size:15px">Regulation</code>.
+    None of these are pre-defined. The agent invents the ontology as it learns.
+  </p>
+
+  <div class="code-block">
+<code><span class="comment">// The agent discovers a code dependency while working</span>
+<span class="comment">// and records it in its brain map:</span>
+create_entity({
+  <span class="key">label</span>: <span class="value">"CodeFile"</span>,
+  <span class="key">properties</span>: { <span class="key">name</span>: <span class="value">"auth.ts"</span>, <span class="key">path</span>: <span class="value">"/src/middleware/auth.ts"</span> },
+  <span class="key">reason</span>: <span class="value">"Core auth middleware — guards all protected routes"</span>
+})
+
+create_relationship({
+  <span class="key">source_id</span>: authFileId,
+  <span class="key">target_id</span>: userSchemaId,
+  <span class="key">relationship_type</span>: <span class="value">"DEPENDS_ON"</span>,
+  <span class="key">reason</span>: <span class="value">"auth.ts imports UserSchema for token validation"</span>
+})</code>
+  </div>
+
+  <p>
+    Schema awareness prevents ambiguity. Before creating new entities, the agent calls
+    <code style="font-family:'DM Mono',monospace;font-size:15px">inspect_schema</code>
+    to see what entity types and relationships already exist in the graph. If a
+    <code style="font-family:'DM Mono',monospace;font-size:15px">CodeFile</code> label
+    already has 47 nodes, the agent reuses it instead of inventing
+    <code style="font-family:'DM Mono',monospace;font-size:15px">SourceFile</code> or
+    <code style="font-family:'DM Mono',monospace;font-size:15px">Module</code>. The schema
+    is also injected into the system prompt automatically, so the agent always knows
+    the shape of its own brain.
+  </p>
+
+  <div class="callout">
+    <span class="callout-label">Why This Matters</span>
+    <p>
+      Most agent memory systems store flat key-value pairs or unstructured text.
+      Dynamic Brain Mapping lets the agent build a structured, queryable model of the
+      domain it works in &mdash; one that grows organically through normal operation.
+      The agent does not just remember what it did. It builds a map of what it understands.
+    </p>
+  </div>
+
+
+  <!-- 04: KNOWLEDGE LIFECYCLE -->
+  <span class="section-number">04 &mdash; EVOLUTIONARY DISTILLATION</span>
+  <h2>How Raw Traces Become Institutional Wisdom</h2>
+
+  <p>
+    Capturing Decision Traces is only the beginning. The framework's true power is
+    what happens next: a four-stage lifecycle called <strong>Evolutionary Distillation</strong>
+    that transforms raw interactions into curated knowledge.
+  </p>
+
+  <ol class="steps">
+    <li>
+      <strong>Capture</strong>
+      Every decision the agent makes is recorded as a raw Decision Trace. At cold start &mdash;
+      when no prior traces exist for a project &mdash; the extractor enters Discovery Mode,
+      capturing everything without filtering to establish a baseline.
+    </li>
+    <li>
+      <strong>Validate</strong>
+      External feedback marks a trace as successful or failed. Success nudges
+      confidence up by 0.1; failure drops it by 0.15. Each trace tracks its own
+      confidence score, floored at 0 and capped at 1. Over time, good reasoning
+      floats to the top.
+    </li>
+    <li>
+      <strong>Synthesize</strong>
+      Traces with high confidence are promoted to <em>Permanent Logic Nodes</em> &mdash;
+      rules injected into every future agent prompt automatically. These appear in the
+      "Established Rules" section of the system prompt. Related rules that cluster around
+      shared concepts are further bundled into <em>Skills</em>.
+    </li>
+    <li>
+      <strong>Prune</strong>
+      Traces with consistently low confidence after repeated failures are demoted to
+      anti-patterns. They are not deleted &mdash; they are preserved as explicit warnings.
+      The agent sees them labeled "AVOID" in its injected context, so it never repeats
+      the same mistake.
+    </li>
+  </ol>
+
+  <div class="flow-arrow">
+    <div class="flow-node">Capture<br>raw traces</div>
+    <span class="flow-arrow-line">&rarr;</span>
+    <div class="flow-node">Validate<br>outcomes</div>
+    <span class="flow-arrow-line">&rarr;</span>
+    <div class="flow-node active">Synthesize<br>rules &amp; skills</div>
+    <span class="flow-arrow-line">&rarr;</span>
+    <div class="flow-node">Prune<br>anti-patterns</div>
+  </div>
+
+  <p>
+    Unlike a database that grows noisier over time, this framework <em>curates</em>.
+    It actively forgets noise while strengthening signal. As the graph matures,
+    you are not running an LLM anymore &mdash; you are running an AI with the
+    tribal knowledge of your specific domain baked into every prompt.
+  </p>
+
+
+  <!-- 05: SKILLS -->
+  <span class="section-number">05 &mdash; PROGRESSIVE DISCLOSURE</span>
+  <h2>Skills: Keeping the Context Window Lean</h2>
+
+  <p>
+    Injecting everything the agent knows into every prompt is expensive and dilutes
+    signal. Once enough patterns have been validated and synthesized, the lifecycle
+    manager clusters related rules by concept into <strong>Skills</strong> &mdash;
+    curated bundles of validated decision patterns that agents load on demand.
+  </p>
+
+  <div class="flow-arrow">
+    <div class="flow-node">Synthesized<br>traces cluster</div>
+    <span class="flow-arrow-line">&rarr;</span>
+    <div class="flow-node active">Skill<br>created</div>
+    <span class="flow-arrow-line">&rarr;</span>
+    <div class="flow-node">Manifest<br>injected</div>
+    <span class="flow-arrow-line">&rarr;</span>
+    <div class="flow-node">Agent calls<br><code style="font-size:11px">load_skill()</code></div>
+    <span class="flow-arrow-line">&rarr;</span>
+    <div class="flow-node">Full context<br>loaded</div>
+  </div>
+
+  <p>
+    The system prompt includes only a lightweight manifest: skill names and one-line
+    descriptions. When the agent recognizes a skill is relevant, it calls
+    <code style="font-family:'DM Mono',monospace;font-size:15px">load_skill("handle-account-lockout")</code>
+    and receives the full validated decision pattern. Skills are output in a standard
+    <code style="font-family:'DM Mono',monospace;font-size:15px">SKILL.md</code> format
+    compatible with the Agent Skills specification, and can be exported to the filesystem
+    for use with any compatible framework. Context is fetched only when needed.
+  </p>
+
+
+  <!-- 06: MULTI-AGENT -->
+  <div class="divider"><span>*</span></div>
+
+  <span class="section-number">06 &mdash; MULTI-AGENT SYSTEMS</span>
+  <h2>Cross-Pollination: When Agents Learn From Each Other</h2>
+
+  <p>
+    When multiple agents share a project in the graph, their knowledge can flow
+    across domain boundaries. A Support Agent learns that a user "prefers Slack
+    over email." Later, the Legal Agent queries the shared graph to send that user
+    a contract &mdash; and inherits that preference without any explicit handoff
+    or prompt engineering.
+  </p>
+
+  <table class="comparison">
+    <thead>
+      <tr>
+        <th>Sharing Policy</th>
+        <th>What the agent sees</th>
+        <th>Best for</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Shared</strong><br><code style="font-family:'DM Mono',monospace;font-size:12px">default</code></td>
+        <td class="good">All traces in the project from any agent</td>
+        <td>Collaborative agents working the same domain</td>
+      </tr>
+      <tr>
+        <td><strong>Isolated</strong></td>
+        <td>Only the agent's own traces</td>
+        <td>Privacy-sensitive domains (medical, legal)</td>
+      </tr>
+      <tr>
+        <td><strong>Selective</strong></td>
+        <td>Own traces + explicitly whitelisted agents</td>
+        <td>Controlled cross-domain learning pipelines</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    The framework also supports multi-tenancy. Each tenant gets a separate graph,
+    and within each tenant, multiple projects can exist independently. A consulting firm
+    can run separate context graphs for each client while sharing cross-cutting skills
+    between projects.
+  </p>
+
+
+  <!-- 07: CODING AGENT USE CASE -->
+  <span class="section-number">07 &mdash; THE FLAGSHIP USE CASE</span>
+  <h2>A Coding Agent That Builds Its Own Codebase Commentary</h2>
+
+  <p>
+    Software development is less about writing syntax and more about managing
+    interconnected constraints. Every codebase is a web of decisions, edge cases,
+    tribal rules, and legacy reasoning &mdash; precisely the structure the Context
+    Graph is designed to model.
+  </p>
+
+  <h3>Contextual Debt Recovery</h3>
+  <p>
+    An agent goes to refactor a function. Without the middleware, it sees only the code.
+    With the middleware, it sees an injected Decision Trace: <em>"This line was added
+    specifically to handle a Safari iOS bug in date parsing."</em> The agent knows
+    not to touch it. Meanwhile, the agent's brain map shows the function is connected
+    via a <code style="font-family:'DM Mono',monospace;font-size:15px">HANDLES</code>
+    relationship to an <code style="font-family:'DM Mono',monospace;font-size:15px">EdgeCase</code>
+    entity &mdash; so even without the trace, the structure itself communicates risk.
+  </p>
+
+  <h3>Cross-File Dependency Mapping</h3>
+  <p>
+    LLMs cannot hold 50 files in active context. But the graph stores the
+    <em>relationships</em> between files as first-class entities. Change
+    <code style="font-family:'DM Mono',monospace;font-size:15px">UserSchema</code>
+    in the backend, and the middleware surfaces:
+    <em>"UserSchema &mdash;[DEPENDS_ON]&rarr; AuthMiddleware &mdash;[IMPACTS]&rarr;
+    FrontendLoginComponent."</em> The agent checks all three, because the graph
+    told it to.
+  </p>
+
+  <h3>Tribal Knowledge That Accumulates</h3>
+  <p>
+    Every team has unwritten rules. "We don't use Axios here, we use Fetch." "All
+    async calls need a 5-second timeout." When a human corrects the agent, the
+    Observer LLM extracts a Constraint and the lifecycle promotes it to a global rule.
+    Next time the agent writes a network request, that constraint is automatically
+    injected into the system prompt. Over time, the correction disappears entirely &mdash;
+    because the agent simply knows.
+  </p>
+
+  <div class="callout">
+    <span class="callout-label">The Transformation</span>
+    <p>
+      Without the middleware, a coding agent is a code generator that starts from a blank
+      slate each session, guesses at architecture, and hallucinates intent. With the
+      middleware, it becomes a senior engineer who remembers the codebase: it knows the
+      justification for every unusual line, the dependency web between files, and the
+      accumulated best practices of everyone who came before it. The context graph is
+      its Director's Commentary on the code.
+    </p>
+  </div>
+
+
+  <!-- 08: VS KNOWLEDGE GRAPHS -->
+  <div class="divider"><span>*</span></div>
+
+  <span class="section-number">08 &mdash; WHAT MAKES IT DIFFERENT</span>
+  <h2>This Is Not a Knowledge Graph</h2>
+
+  <p>
+    The term "knowledge graph" already means something. Neo4j, Wikidata, Google's
+    Knowledge Graph &mdash; these are systems that store <em>facts about the world</em>.
+    The Context Graph stores something categorically different: the reasoning behind
+    decisions and the agent's evolving understanding of the domain.
+  </p>
+
+  <table class="comparison">
+    <thead>
+      <tr>
+        <th>Dimension</th>
+        <th>Traditional Knowledge Graph</th>
+        <th>Context Graph</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>What it stores</strong></td>
+        <td class="bad">Facts and entity relationships<br><em style="font-size:14px">"Paris is the capital of France"</em></td>
+        <td class="good">Decision traces, justifications, and discovered entities<br><em style="font-size:14px">"We deployed with rollback because staging was unstable"</em></td>
+      </tr>
+      <tr>
+        <td><strong>Who populates it</strong></td>
+        <td class="bad">Humans, scrapers, or manual curation</td>
+        <td class="good">Agents, automatically, through normal operation</td>
+      </tr>
+      <tr>
+        <td><strong>Schema</strong></td>
+        <td class="bad">Defined upfront by engineers</td>
+        <td class="good">Discovered dynamically by agents as they work</td>
+      </tr>
+      <tr>
+        <td><strong>Self-curation</strong></td>
+        <td class="bad">No &mdash; grows larger and noisier</td>
+        <td class="good">Yes &mdash; validates, synthesizes, and prunes continuously</td>
+      </tr>
+      <tr>
+        <td><strong>Learns from outcomes</strong></td>
+        <td class="bad">No &mdash; facts don't have success/failure states</td>
+        <td class="good">Yes &mdash; confidence scores adjust based on real-world results</td>
+      </tr>
+      <tr>
+        <td><strong>Anti-pattern tracking</strong></td>
+        <td class="bad">No concept of failure or avoidance</td>
+        <td class="good">Failed paths preserved as explicit "AVOID" warnings</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="pull-quote">
+    <p>"A knowledge graph tells an agent what exists. A Context Graph tells
+    an agent what to do &mdash; and what never to do again."</p>
+  </div>
+
+
+  <!-- 09: ARCHITECTURE & GETTING STARTED -->
+  <span class="section-number">09 &mdash; GETTING STARTED</span>
+  <h2>What It Looks Like in Code</h2>
+
+  <p>
+    The middleware ships as both a TypeScript and Python package built on LangChain.
+    Both SDKs share the same Graphmind graph database with built-in vector search for
+    semantic similarity retrieval. A TypeScript integration looks like this:
+  </p>
+
+  <div class="code-block">
+<code><span class="keyword">import</span> { createContextGraph } <span class="keyword">from</span> <span class="value">"graphmind-context-graphs"</span>;
+
+<span class="comment">// Initialize the context graph for your project</span>
+<span class="keyword">const</span> cg = <span class="keyword">await</span> createContextGraph({
+  <span class="key">tenant</span>: <span class="value">"acme_corp"</span>,
+  <span class="key">project</span>: <span class="value">"platform-v2"</span>,
+  <span class="key">domain</span>: <span class="value">"tech"</span>,
+  <span class="key">agent</span>: <span class="value">"senior-dev-agent"</span>,
+  <span class="key">agentDescription</span>: <span class="value">"Reviews PRs and refactors legacy code"</span>,
+  <span class="key">embedding</span>: { <span class="key">provider</span>: myEmbeddingModel, <span class="key">dimensions</span>: 1536 },
+  <span class="key">baseSystemPrompt</span>: <span class="value">"You are a senior TypeScript architect."</span>,
+  <span class="key">contextSharing</span>: <span class="value">"selective"</span>,
+  <span class="key">allowedAgents</span>: [<span class="value">"qa-agent"</span>, <span class="value">"devops-agent"</span>],
+});
+
+<span class="comment">// Wire into your LangChain agent</span>
+<span class="comment">// cg.middleware = [promptInjector, reasoningExtractor]</span>
+<span class="comment">// cg.tools = [inspect_schema, query_graph, create_entity,</span>
+<span class="comment">//              create_relationship, find_entities]</span>
+<span class="keyword">const</span> agent = createAgent({
+  <span class="key">model</span>: <span class="value">"claude-sonnet-4-6"</span>,
+  <span class="key">tools</span>: [...codeTools, ...cg.tools, loadSkill, listSkills],
+  <span class="key">middleware</span>: cg.middleware,
+});</code>
+  </div>
+
+  <p>
+    The <code style="font-family:'DM Mono',monospace;font-size:15px">createContextGraph</code>
+    call bootstraps the database schema, initializes the Observer LLM for reasoning
+    extraction, and returns two arrays: <strong>middleware</strong> (the prompt injector and
+    reasoning extractor that wrap every agent call) and <strong>tools</strong> (schema
+    inspector, graph query, entity builder, and relationship builder that the agent
+    uses for brain mapping).
+  </p>
+
+  <p>
+    The knowledge lifecycle runs separately &mdash; on a cron schedule, after each
+    conversation, or whenever you choose:
+  </p>
+
+  <div class="code-block">
+<code><span class="comment">// Evolve knowledge: promote successes, prune failures, bundle skills</span>
+<span class="keyword">const</span> promoted = <span class="keyword">await</span> cg.lifecycle.synthesizeRules();
+<span class="keyword">const</span> pruned   = <span class="keyword">await</span> cg.lifecycle.pruneFailures();
+<span class="keyword">const</span> skills   = <span class="keyword">await</span> cg.lifecycle.synthesizeSkills();
+
+<span class="comment">// Validate a specific trace based on real-world outcome</span>
+<span class="keyword">await</span> cg.lifecycle.validateTrace(traceId, { <span class="key">success</span>: <span class="keyword">true</span> });</code>
+  </div>
+
+
+  <p>
+    The same integration in Python:
+  </p>
+
+  <div class="code-block">
+<code><span class="keyword">from</span> langchain.agents <span class="keyword">import</span> create_agent
+<span class="keyword">from</span> graphmind_context_graphs <span class="keyword">import</span> (
+    create_context_graph, ContextGraphConfig, EmbeddingConfig,
+)
+
+<span class="comment"># Initialize the context graph for your project</span>
+cg = create_context_graph(ContextGraphConfig(
+    <span class="key">tenant</span>=<span class="value">"acme_corp"</span>,
+    <span class="key">project</span>=<span class="value">"platform-v2"</span>,
+    <span class="key">domain</span>=<span class="value">"tech"</span>,
+    <span class="key">agent</span>=<span class="value">"senior-dev-agent"</span>,
+    <span class="key">agent_description</span>=<span class="value">"Reviews PRs and refactors legacy code"</span>,
+    <span class="key">embedding</span>=EmbeddingConfig(<span class="key">provider</span>=my_embeddings, <span class="key">dimensions</span>=1536),
+    <span class="key">base_system_prompt</span>=<span class="value">"You are a senior Python architect."</span>,
+    <span class="key">context_sharing</span>=<span class="value">"selective"</span>,
+    <span class="key">allowed_agents</span>=[<span class="value">"qa-agent"</span>, <span class="value">"devops-agent"</span>],
+))
+
+<span class="comment"># Wire into your LangChain agent</span>
+agent = create_agent(
+    <span class="value">"openai:gpt-4.1"</span>,
+    <span class="key">tools</span>=[*code_tools, *cg.tools],
+    <span class="key">middleware</span>=cg.middleware,
+)
+
+<span class="comment"># Evolve knowledge</span>
+promoted = cg.lifecycle.synthesize_rules()
+pruned = cg.lifecycle.prune_failures()</code>
+  </div>
+
+  <div class="cta-block">
+    <h3>The agent that gets smarter with every run.</h3>
+    <p>
+      Graphmind Context Graphs ship as both TypeScript and Python middleware
+      packages for LangChain agents. Install it, plug it in, and let your
+      agents start building their own Director's Commentary.
+    </p>
+    <div class="cta-tags">
+      <span class="cta-tag">npm install</span>
+      <span class="cta-tag">pip install</span>
+      <span class="cta-tag">TypeScript</span>
+      <span class="cta-tag">Python</span>
+      <span class="cta-tag">LangChain</span>
+      <span class="cta-tag">Vector Search</span>
+      <span class="cta-tag">Multi-Agent</span>
+      <span class="cta-tag">Brain Mapping</span>
+      <span class="cta-tag">Knowledge Lifecycle</span>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>

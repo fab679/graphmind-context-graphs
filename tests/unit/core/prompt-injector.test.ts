@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import { formatSchemaForPrompt } from "../../../src/core/schema-inspector.js";
+import type { SchemaOverview } from "../../../src/types/data-model.js";
 
 // Test the formatting logic directly since dynamicSystemPromptMiddleware
 // is a LangChain integration that requires a running agent
@@ -60,5 +62,67 @@ describe("Prompt injection formatting", () => {
 
     expect(antiPatterns[0].status).toBe("anti_pattern");
     expect(antiPatterns[0].justification.confidence).toBeLessThan(0.3);
+  });
+});
+
+// ── Schema injection tests ─────────────────────────────────────────────────
+
+describe("Schema injection via formatSchemaForPrompt", () => {
+  it("should return empty string when schema has no node labels", () => {
+    const schema: SchemaOverview = {
+      nodeLabels: [],
+      relationshipTypes: [],
+      nodeCounts: {},
+      edgeCounts: {},
+    };
+    const result = formatSchemaForPrompt(schema);
+    expect(result).toBe("");
+  });
+
+  it("should produce schema section when entities exist", () => {
+    const schema: SchemaOverview = {
+      nodeLabels: ["DecisionTrace", "Intent", "CodeFile"],
+      relationshipTypes: ["HAS_INTENT", "IMPORTS"],
+      nodeCounts: { DecisionTrace: 12, Intent: 12, CodeFile: 5 },
+      edgeCounts: { HAS_INTENT: 12, IMPORTS: 3 },
+    };
+
+    const result = formatSchemaForPrompt(schema);
+
+    // Should have the header
+    expect(result).toContain("## Your Brain Map");
+    // Should list entity types with counts
+    expect(result).toContain("DecisionTrace (12 nodes)");
+    expect(result).toContain("Intent (12 nodes)");
+    expect(result).toContain("CodeFile (5 nodes)");
+    // Should list relationship types with counts
+    expect(result).toContain("HAS_INTENT (12 edges)");
+    expect(result).toContain("IMPORTS (3 edges)");
+  });
+
+  it("should handle schema with nodes but no relationships", () => {
+    const schema: SchemaOverview = {
+      nodeLabels: ["Orphan"],
+      relationshipTypes: [],
+      nodeCounts: { Orphan: 1 },
+      edgeCounts: {},
+    };
+
+    const result = formatSchemaForPrompt(schema);
+    expect(result).toContain("Orphan (1 nodes)");
+    expect(result).toContain("Entity Types");
+    expect(result).toContain("Relationship Types");
+  });
+
+  it("should show contextual guidance about building coherently", () => {
+    const schema: SchemaOverview = {
+      nodeLabels: ["Patient"],
+      relationshipTypes: ["DIAGNOSED_WITH"],
+      nodeCounts: { Patient: 3 },
+      edgeCounts: { DIAGNOSED_WITH: 2 },
+    };
+
+    const result = formatSchemaForPrompt(schema);
+    expect(result).toContain("coherent");
   });
 });

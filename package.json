@@ -1,7 +1,7 @@
 {
   "name": "graphmind-context-graphs",
-  "version": "0.1.0",
-  "description": "Context Graph middleware for LangChain AI agents - captures decision traces and reasoning patterns",
+  "version": "0.2.0",
+  "description": "Director's Commentary middleware for AI agents - captures decision traces, builds dynamic brain maps, and evolves institutional wisdom",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -30,9 +30,9 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:examples": "vitest run --project examples",
-    "example": "tsx examples/run-agent.ts",
-    "example:multi-domain": "tsx examples/multi-domain-agents.ts",
-    "example:skills": "tsx examples/skills-demo.ts",
+    "example": "tsx examples/basic-context-graph.ts",
+    "example:coding": "tsx examples/coding-agent.ts",
+    "example:multi-agent": "tsx examples/multi-agent-shared.ts",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
@@ -43,7 +43,11 @@
     "decision-traces",
     "middleware",
     "graphmind",
-    "graph-database"
+    "graph-database",
+    "brain-mapping",
+    "schema-awareness",
+    "multi-agent",
+    "knowledge-lifecycle"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -53,7 +57,7 @@
   },
   "dependencies": {
     "dotenv": "^17.3.1",
-    "graphmind-sdk": "^0.8.3",
+    "graphmind-sdk": "^0.8.6",
     "zod": "^4.3.6"
   },
   "devDependencies": {

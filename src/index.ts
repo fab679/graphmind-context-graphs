@@ -7,11 +7,19 @@ import { ContextualRegistry } from "./core/contextual-registry.js";
 import { KnowledgeLifecycleManager } from "./core/knowledge-lifecycle.js";
 import { createReasoningExtractor } from "./core/reasoning-extractor.js";
 import { createPromptInjector } from "./core/prompt-injector.js";
+import { createSchemaInspectorTool, createGraphQueryTool } from "./core/schema-inspector.js";
+import { createEntityTool, createRelationshipTool, createFindEntitiesTool } from "./core/entity-builder.js";
 
 export interface ContextGraphInstance {
+  /** Middleware array to pass to createAgent(). */
   middleware: unknown[];
+  /** Tools for agents to interact with the context graph (schema inspection, entity creation, etc.). */
+  tools: unknown[];
+  /** The contextual registry for manual trace recording and retrieval. */
   registry: ContextualRegistry;
+  /** The knowledge lifecycle manager for validation, synthesis, and pruning. */
   lifecycle: KnowledgeLifecycleManager;
+  /** Direct access to the Graphmind store. */
   store: GraphmindStore;
 }
 
@@ -49,6 +57,27 @@ function resolveConfig(config: ContextGraphConfig): ResolvedContextGraphConfig {
   };
 }
 
+/**
+ * Create a Context Graph instance — the main entry point for the middleware.
+ *
+ * Returns middleware (for LangChain agent), tools (for agent brain-mapping),
+ * and lifecycle manager (for knowledge curation).
+ *
+ * ```typescript
+ * const cg = await createContextGraph({
+ *   tenant: "my_company",
+ *   project: "support",
+ *   agent: "support-agent",
+ *   embedding: { provider: myEmbeddingProvider, dimensions: 1536 },
+ * });
+ *
+ * const agent = createAgent({
+ *   model: "claude-sonnet-4-6",
+ *   tools: [...myTools, ...cg.tools],
+ *   middleware: cg.middleware,
+ * });
+ * ```
+ */
 export async function createContextGraph(
   config: ContextGraphConfig
 ): Promise<ContextGraphInstance> {
@@ -58,7 +87,7 @@ export async function createContextGraph(
   const store = new GraphmindStore(resolved);
   await store.initialize();
 
-  // Initialize observer model for ablation filtering
+  // Initialize observer model for ablation filtering and structured extraction
   let observerModel: BaseChatModel | null = null;
   if (resolved.observerModel) {
     observerModel = await initChatModel(resolved.observerModel);
@@ -80,8 +109,18 @@ export async function createContextGraph(
     observerModel
   );
 
+  // Create agent tools for brain-mapping
+  const tools = [
+    createSchemaInspectorTool(store),
+    createGraphQueryTool(store),
+    createEntityTool(store),
+    createRelationshipTool(store),
+    createFindEntitiesTool(store),
+  ];
+
   return {
     middleware: [promptInjector, reasoningExtractor],
+    tools,
     registry,
     lifecycle,
     store,
@@ -116,6 +155,9 @@ export type {
   TraceStatus,
   ScoredDecisionTrace,
   FormattedContext,
+  GraphEntity,
+  GraphRelationship,
+  SchemaOverview,
 } from "./types/data-model.js";
 export type {
   UniversalLogicClass,
@@ -138,4 +180,6 @@ export { createReasoningExtractor } from "./core/reasoning-extractor.js";
 export { createPromptInjector } from "./core/prompt-injector.js";
 export { ablationFilter, filterCriticalFacts } from "./core/ablation-filter.js";
 export { DEFAULT_LOGIC_MAPPINGS } from "./types/logic-classes.js";
-export { createSkillTool, createListSkillsTool } from "./core/skill-tool.js";
+export { createSkillTool, createListSkillsTool, formatSkillAsMarkdown } from "./core/skill-tool.js";
+export { createSchemaInspectorTool, createGraphQueryTool, formatSchemaForPrompt } from "./core/schema-inspector.js";
+export { createEntityTool, createRelationshipTool, createFindEntitiesTool } from "./core/entity-builder.js";

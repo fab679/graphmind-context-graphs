@@ -66,9 +66,9 @@ export class KnowledgeLifecycleManager {
         await this.store.updateTraceStatus(trace.id, "synthesized");
         promoted.push(trace.id);
         this.logger.info(
-          "Promoted trace %s to rule (confidence: %.2f)",
+          "Promoted trace %s to rule (confidence: %s)",
           trace.id,
-          trace.justification.confidence
+          trace.justification.confidence.toFixed(2)
         );
       }
     }
@@ -115,20 +115,22 @@ export class KnowledgeLifecycleManager {
 
       const skillName = `handle-${group.concept}`;
 
-      // Build the skill prompt from constituent trace rules
+      // Build skill instructions from constituent trace rules
       const ruleLines = group.traces.map((t, i) => {
         const parts: string[] = [];
-        if (t.intent) parts.push(`Intent: ${t.intent}`);
-        if (t.action) parts.push(`Action: ${t.action}`);
-        if (t.justification) parts.push(`Why: ${t.justification}`);
-        return `${i + 1}. ${parts.join(" → ")}`;
+        if (t.intent) parts.push(`**Intent**: ${t.intent}`);
+        if (t.action) parts.push(`**Action**: ${t.action}`);
+        if (t.justification) parts.push(`**Why**: ${t.justification}`);
+        return `${i + 1}. ${parts.join("\n   ")}`;
       });
 
       const prompt = [
-        `## Skill: ${skillName}`,
-        `You have specialized knowledge for handling "${group.concept}" scenarios.`,
-        `The following established rules should guide your decisions:\n`,
+        `When handling "${group.concept}" scenarios, follow these validated decision patterns:`,
+        "",
         ...ruleLines,
+        "",
+        `These patterns have been validated across ${group.traces.length} successful interactions.`,
+        `Apply the most relevant pattern to the current situation, adapting as needed.`,
       ].join("\n");
 
       const avgConfidence =
@@ -164,10 +166,10 @@ export class KnowledgeLifecycleManager {
 
       skillNames.push(skillName);
       this.logger.info(
-        "Synthesized skill '%s' from %d traces (confidence: %.2f)",
+        "Synthesized skill '%s' from %d traces (confidence: %s)",
         skillName,
         group.traces.length,
-        avgConfidence
+        avgConfidence.toFixed(2)
       );
     }
 

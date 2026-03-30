@@ -1,18 +1,61 @@
 import { tool } from "langchain";
 import { z } from "zod";
 import type { GraphmindStore } from "../db/client.js";
+import type { Skill } from "../types/data-model.js";
+
+/**
+ * Format a Skill as a SKILL.md-compatible document following the Agent Skills specification.
+ * This ensures skills work identically whether loaded from the graph or from a filesystem.
+ *
+ * @see https://agentskills.io/specification
+ */
+export function formatSkillAsMarkdown(skill: Skill): string {
+  const frontmatter = [
+    "---",
+    `name: ${skill.name}`,
+    `description: ${skill.description}`,
+  ];
+  if (skill.tools.length > 0) {
+    frontmatter.push(`allowed-tools: ${skill.tools.join(", ")}`);
+  }
+  if (skill.domain) {
+    frontmatter.push(`metadata:`);
+    frontmatter.push(`  domain: ${skill.domain}`);
+    frontmatter.push(`  confidence: "${skill.confidence.toFixed(2)}"`);
+    frontmatter.push(`  trace-count: "${skill.traceCount}"`);
+  }
+  frontmatter.push("---");
+
+  const body = [
+    `# ${skill.name}`,
+    "",
+    "## Overview",
+    "",
+    skill.description,
+    "",
+    "## Instructions",
+    "",
+    skill.prompt,
+  ];
+
+  if (skill.concepts.length > 0) {
+    body.push("", `## Tags`, "", skill.concepts.map((c) => `- #${c}`).join("\n"));
+  }
+
+  return [...frontmatter, "", ...body].join("\n");
+}
 
 /**
  * Creates a `load_skill` tool that agents can use for progressive disclosure.
  *
- * Instead of injecting all skill context upfront, this tool lets the agent
- * discover and load skills on-demand — keeping the context window lean.
+ * Returns skill content in SKILL.md format (Agent Skills specification),
+ * making graph-synthesized skills compatible with the DeepAgents ecosystem.
  *
  * Usage with createAgent():
  * ```typescript
  * const skillTool = createSkillTool(contextGraph.store);
  * const agent = createAgent({
- *   model: "openai:gpt-4.1",
+ *   model: "claude-sonnet-4-6",
  *   tools: [...yourTools, skillTool],
  *   middleware: contextGraph.middleware,
  * });
@@ -21,10 +64,23 @@ import type { GraphmindStore } from "../db/client.js";
 export function createSkillTool(store: GraphmindStore) {
   return tool(
     async ({ skill_name }) => {
+      // If it's a URL, fetch the remote SKILL.md
+      if (skill_name.startsWith("http://") || skill_name.startsWith("https://")) {
+        try {
+          const response = await fetch(skill_name);
+          if (!response.ok) {
+            return `Failed to fetch skill from URL: ${response.status} ${response.statusText}`;
+          }
+          return await response.text();
+        } catch (err) {
+          return `Failed to fetch skill from URL: ${(err as Error).message}`;
+        }
+      }
+
+      // Otherwise load from graph
       const skill = await store.getSkillByName(skill_name);
 
       if (!skill) {
-        // List available skills as a fallback
         const available = await store.getSkillsByProject();
         if (available.length === 0) {
           return "No skills available yet. Skills are automatically created as the knowledge lifecycle promotes and clusters decision traces.";
@@ -35,31 +91,19 @@ export function createSkillTool(store: GraphmindStore) {
         return `Skill "${skill_name}" not found. Available skills:\n${manifest}`;
       }
 
-      const parts: string[] = [skill.prompt];
-
-      if (skill.tools.length > 0) {
-        parts.push(`\nRecommended tools: ${skill.tools.join(", ")}`);
-      }
-
-      if (skill.domain) {
-        parts.push(`Domain: ${skill.domain}`);
-      }
-
-      parts.push(`\nConfidence: ${skill.confidence.toFixed(2)} (based on ${skill.traceCount} validated traces)`);
-
-      return parts.join("\n");
+      return formatSkillAsMarkdown(skill);
     },
     {
       name: "load_skill",
       description:
-        "Load a specialized skill by name to get expert guidance for a specific scenario. " +
-        "Use this when the available skills listed in the system prompt match the current task. " +
-        "The skill provides validated decision patterns and recommended approaches.",
+        "Load a specialized skill by name or URL. " +
+        "Pass a skill name to load from the context graph, or a URL to fetch a remote SKILL.md file. " +
+        "Use this when the available skills listed in the system prompt match the current task.",
       schema: z.object({
         skill_name: z
           .string()
           .describe(
-            "The name of the skill to load (e.g., 'handle-account-lockout', 'handle-rate-limiting')"
+            "Skill name (e.g., 'handle-account-lockout') or URL to a SKILL.md file"
           ),
       }),
     }
@@ -68,7 +112,6 @@ export function createSkillTool(store: GraphmindStore) {
 
 /**
  * Creates a `list_skills` tool for discovering available skills.
- * Useful when the agent needs to explore what skills are available.
  */
 export function createListSkillsTool(store: GraphmindStore) {
   return tool(
@@ -97,3 +140,26 @@ export function createListSkillsTool(store: GraphmindStore) {
     }
   );
 }
+
+/**
+ * Export all graph-synthesized skills to a directory as SKILL.md files,
+ * compatible with DeepAgents filesystem skills.
+ *
+ * This bridges graph-based skills with the Agent Skills specification,
+ * letting users use synthesized skills with any Agent Skills-compatible framework.
+ *
+ * ```typescript
+ * import { writeFile, mkdir } from "fs/promises";
+ *
+ * const skills = await contextGraph.store.getSkillsByProject();
+ * for (const skill of skills) {
+ *   const full = await contextGraph.store.getSkillByName(skill.name);
+ *   if (!full) continue;
+ *   const dir = `./skills/${skill.name}`;
+ *   await mkdir(dir, { recursive: true });
+ *   await writeFile(`${dir}/SKILL.md`, formatSkillAsMarkdown(full));
+ * }
+ * ```
+ */
+// The formatSkillAsMarkdown function above handles the export format.
+// Users call it directly as shown in the example.

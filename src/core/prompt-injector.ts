@@ -5,8 +5,10 @@ import type {
   DecisionTrace,
   Skill,
   ScoredDecisionTrace,
+  SchemaOverview,
 } from "../types/data-model.js";
 import { createLogger } from "../utils/logger.js";
+import { formatSchemaForPrompt } from "./schema-inspector.js";
 
 export function createPromptInjector(
   registry: ContextualRegistry,
@@ -44,6 +46,19 @@ export function createPromptInjector(
 
       if (config.baseSystemPrompt) {
         sections.push(config.baseSystemPrompt);
+      }
+
+      // Schema awareness — show agents what entities exist in their brain
+      if (context.schema && context.schema.nodeLabels.length > 0) {
+        const schemaSection = formatSchemaForPrompt(context.schema);
+        if (schemaSection) {
+          sections.push(schemaSection);
+          logger.info(
+            "Injecting schema overview (%d entity types, %d relationship types)",
+            context.schema.nodeLabels.length,
+            context.schema.relationshipTypes.length
+          );
+        }
       }
 
       if (context.pastTraces.length > 0) {
@@ -92,24 +107,35 @@ export function createPromptInjector(
 
 function formatPastLogic(traces: ScoredDecisionTrace[]): string {
   const items = traces.map(({ trace, similarity }) => {
-    const constraints = trace.constraints
-      .map((c) => `  - [${c.type}] ${c.description}`)
-      .join("\n");
+    const intentShort = truncateForPrompt(trace.intent.description, 120);
+    const actionShort = truncateForPrompt(trace.action.description, 150);
+    const whyShort = truncateForPrompt(trace.justification.description, 150);
     const domainTag = trace.domain ? ` [${trace.domain}]` : "";
     const conceptTags =
       trace.concepts && trace.concepts.length > 0
         ? ` tags: ${trace.concepts.map((c) => `#${c}`).join(", ")}`
         : "";
-    return `- **Intent**: ${trace.intent.description} (similarity: ${similarity.toFixed(2)})${domainTag}${conceptTags}
-  **Action taken**: ${trace.action.description}
-  **Why**: ${trace.justification.description}
-${constraints ? `  **Constraints**:\n${constraints}` : ""}`;
+    const constraintLines = trace.constraints
+      .slice(0, 3)  // Max 3 constraints per trace
+      .map((c) => `  - [${c.type}] ${truncateForPrompt(c.description, 100)}`);
+    const constraintSection = constraintLines.length > 0
+      ? `\n  **Constraints**:\n${constraintLines.join("\n")}`
+      : "";
+    return `- **Intent**: ${intentShort} (similarity: ${similarity.toFixed(2)})${domainTag}${conceptTags}
+  **Action**: ${actionShort}
+  **Why**: ${whyShort}${constraintSection}`;
   });
 
   return `## Relevant Past Logic (Director's Commentary)
-The following past decisions are relevant to the current task. Use them as reference, not as strict rules.
+The following past decisions are relevant to the current task.
 
 ${items.join("\n\n")}`;
+}
+
+function truncateForPrompt(text: string, maxLen: number): string {
+  if (!text) return "";
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length <= maxLen ? clean : clean.substring(0, maxLen - 1) + "…";
 }
 
 function formatRules(rules: DecisionTrace[]): string {
@@ -141,14 +167,13 @@ ${items.join("\n")}`;
 function formatSkillManifest(skills: Skill[]): string {
   const items = skills.map((s) => {
     const domain = s.domain ? ` [${s.domain}]` : "";
-    const tags = s.concepts.length > 0
-      ? ` (${s.concepts.map((c) => `#${c}`).join(", ")})`
-      : "";
-    return `- **${s.name}**${domain}: ${s.description}${tags}`;
+    const tools = s.tools.length > 0 ? ` (tools: ${s.tools.join(", ")})` : "";
+    return `- **${s.name}**${domain}: ${s.description}${tools}`;
   });
 
-  return `## Available Skills
-The following specialized skills are available. Use the \`load_skill\` tool to load a skill's full context when it matches the current task.
+  return `## Skills System
+You have access to specialized skills derived from validated decision patterns.
+When a user's request matches a skill below, use \`load_skill\` with the skill name to load its full instructions before proceeding.
 
 ${items.join("\n")}`;
 }

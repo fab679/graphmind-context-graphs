@@ -1,21 +1,38 @@
+# ── Dependencies & Build ───────────────────────────────────────────────────────
 node_modules/
 dist/
 *.tsbuildinfo
+coverage/
+
+# ── Python SDK ─────────────────────────────────────────────────────────────────
+python-sdk/.venv/
+python-sdk/dist/
+python-sdk/build/
+python-sdk/*.egg-info/
+python-sdk/src/*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.pytest_cache/
+
+# ── Environment & Secrets ──────────────────────────────────────────────────────
 .env
 .env.local
-coverage/
-.DS_Store
+.env.production
 
-
-
+# ── Third-Party Docs (reference only, not shipped) ────────────────────────────
 graphmind-docs/
-
 Langchain TypeScript Docs/
+Langchain Python Docs/
 
+# ── Internal / Project-Specific ────────────────────────────────────────────────
 CLAUDE.md
-
 KILLER_FEATURE.md
-
 ARCHITECTURE.md
-
+graphmind-issues.md
 .claude/
+
+# ── OS ─────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

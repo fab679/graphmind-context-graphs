@@ -10,6 +10,12 @@ function createMockStore() {
     getActiveRules: vi.fn().mockResolvedValue([]),
     getAntiPatterns: vi.fn().mockResolvedValue([]),
     getSkillsByProject: vi.fn().mockResolvedValue([]),
+    getSchemaOverview: vi.fn().mockResolvedValue({
+      nodeLabels: [],
+      relationshipTypes: [],
+      nodeCounts: {},
+      edgeCounts: {},
+    }),
     saveDecisionTrace: vi.fn().mockResolvedValue("trace-1"),
     createPrecedentLink: vi.fn().mockResolvedValue(undefined),
     getTraceById: vi.fn().mockResolvedValue(null),

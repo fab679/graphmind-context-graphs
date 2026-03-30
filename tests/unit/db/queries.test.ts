@@ -7,7 +7,7 @@ import {
   DOMAIN_QUERIES,
   CONCEPT_QUERIES,
   AGENT_QUERIES,
-  TOOLCALL_QUERIES,
+  TOOL_QUERIES,
   SKILL_QUERIES,
 } from "../../../src/db/queries.js";
 
@@ -38,7 +38,7 @@ describe("Cypher query builders", () => {
       expect(SCHEMA_QUERIES.createProjectIndex).toContain(":Project");
       expect(SCHEMA_QUERIES.createDomainIndex).toContain(":Domain");
       expect(SCHEMA_QUERIES.createConceptIndex).toContain(":Concept");
-      expect(SCHEMA_QUERIES.createToolCallIndex).toContain(":ToolCall");
+      expect(SCHEMA_QUERIES.createToolIndex).toContain(":Tool");
       expect(SCHEMA_QUERIES.createAgentIndex).toContain(":Agent");
     });
   });
@@ -67,7 +67,7 @@ describe("Cypher query builders", () => {
       expect(TRACE_QUERIES.linkTraceToAgent).toContain("$agentName");
     });
 
-    it("should have parameterized getTraceById with extended nodes including Agent and ToolCall", () => {
+    it("should have parameterized getTraceById with extended nodes including Agent and Tool", () => {
       expect(TRACE_QUERIES.getTraceById).toContain("$traceId");
       expect(TRACE_QUERIES.getTraceById).toContain("BELONGS_TO_PROJECT");
       expect(TRACE_QUERIES.getTraceById).toContain("BELONGS_TO_DOMAIN");
@@ -105,33 +105,43 @@ describe("Cypher query builders", () => {
       expect(TRACE_QUERIES.getAntiPatterns).toContain("'anti_pattern'");
     });
 
-    it("should not have domain as a constraint property", () => {
+    it("should create constraints inline from matched trace", () => {
+      expect(TRACE_QUERIES.createConstraintForTrace).toContain("HAS_CONSTRAINT");
+      expect(TRACE_QUERIES.createConstraintForTrace).toContain(":Constraint");
+      expect(TRACE_QUERIES.createConstraintForTrace).toContain("$traceId");
+      expect(TRACE_QUERIES.createConstraintForTrace).toContain("$description");
       expect(TRACE_QUERIES.createConstraintForTrace).not.toContain("domain:");
     });
   });
 
   describe("PROJECT_QUERIES", () => {
-    it("should merge project with tenant scoping", () => {
+    it("should have merge queries with tenant scoping", () => {
       expect(PROJECT_QUERIES.mergeProject).toContain("MERGE");
       expect(PROJECT_QUERIES.mergeProject).toContain(":Project");
       expect(PROJECT_QUERIES.mergeProject).toContain("$name");
       expect(PROJECT_QUERIES.mergeProject).toContain("$tenant");
+      expect(PROJECT_QUERIES.mergeProjectSimple).toContain("MERGE");
+      expect(PROJECT_QUERIES.mergeProjectSimple).toContain(":Project");
     });
   });
 
   describe("DOMAIN_QUERIES", () => {
-    it("should merge domain by name", () => {
+    it("should have merge queries by name", () => {
       expect(DOMAIN_QUERIES.mergeDomain).toContain("MERGE");
       expect(DOMAIN_QUERIES.mergeDomain).toContain(":Domain");
       expect(DOMAIN_QUERIES.mergeDomain).toContain("$name");
+      expect(DOMAIN_QUERIES.mergeDomainSimple).toContain("MERGE");
+      expect(DOMAIN_QUERIES.mergeDomainSimple).toContain(":Domain");
     });
   });
 
   describe("AGENT_QUERIES", () => {
-    it("should merge agent by name", () => {
+    it("should have merge queries by name", () => {
       expect(AGENT_QUERIES.mergeAgent).toContain("MERGE");
       expect(AGENT_QUERIES.mergeAgent).toContain(":Agent");
       expect(AGENT_QUERIES.mergeAgent).toContain("$name");
+      expect(AGENT_QUERIES.mergeAgentSimple).toContain("MERGE");
+      expect(AGENT_QUERIES.mergeAgentSimple).toContain(":Agent");
     });
 
     it("should link agent to project", () => {
@@ -152,32 +162,34 @@ describe("Cypher query builders", () => {
     });
   });
 
-  describe("TOOLCALL_QUERIES", () => {
-    it("should create tool call linked to trace", () => {
-      expect(TOOLCALL_QUERIES.createToolCallForTrace).toContain("USED_TOOL");
-      expect(TOOLCALL_QUERIES.createToolCallForTrace).toContain(":ToolCall");
-      expect(TOOLCALL_QUERIES.createToolCallForTrace).toContain("$name");
-      expect(TOOLCALL_QUERIES.createToolCallForTrace).toContain("$args");
-      expect(TOOLCALL_QUERIES.createToolCallForTrace).toContain("$result");
+  describe("TOOL_QUERIES", () => {
+    it("should have merge Tool query and link to trace", () => {
+      expect(TOOL_QUERIES.mergeTool).toContain("MERGE");
+      expect(TOOL_QUERIES.mergeTool).toContain(":Tool");
+      expect(TOOL_QUERIES.linkTraceToTool).toContain("USED_TOOL");
+      expect(TOOL_QUERIES.linkTraceToTool).toContain("$toolName");
+      expect(TOOL_QUERIES.linkTraceToTool).toContain("$traceId");
     });
 
     it("should get tool stats by project", () => {
-      expect(TOOLCALL_QUERIES.getToolStatsByProject).toContain("USED_TOOL");
-      expect(TOOLCALL_QUERIES.getToolStatsByProject).toContain("$project");
-      expect(TOOLCALL_QUERIES.getToolStatsByProject).toContain("count(tc)");
+      expect(TOOL_QUERIES.getToolStatsByProject).toContain("USED_TOOL");
+      expect(TOOL_QUERIES.getToolStatsByProject).toContain("$project");
+      expect(TOOL_QUERIES.getToolStatsByProject).toContain("count(r)");
     });
 
     it("should get tool stats by agent", () => {
-      expect(TOOLCALL_QUERIES.getToolStatsByAgent).toContain("PRODUCED_BY");
-      expect(TOOLCALL_QUERIES.getToolStatsByAgent).toContain("$agentName");
+      expect(TOOL_QUERIES.getToolStatsByAgent).toContain("PRODUCED_BY");
+      expect(TOOL_QUERIES.getToolStatsByAgent).toContain("$agentName");
     });
   });
 
   describe("CONCEPT_QUERIES", () => {
-    it("should merge concept by name", () => {
+    it("should have merge concept queries", () => {
       expect(CONCEPT_QUERIES.mergeConcept).toContain("MERGE");
       expect(CONCEPT_QUERIES.mergeConcept).toContain(":Concept");
       expect(CONCEPT_QUERIES.mergeConcept).toContain("$name");
+      expect(CONCEPT_QUERIES.mergeConceptSimple).toContain("MERGE");
+      expect(CONCEPT_QUERIES.mergeConceptSimple).toContain(":Concept");
     });
 
     it("should link traces to concepts", () => {

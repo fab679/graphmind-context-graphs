@@ -1,29 +1,37 @@
 # Tool Call Tracking
 
-The Context Graph captures individual tool invocations as `ToolCall` nodes in the graph, enabling visualization and usage analytics.
+The Context Graph captures tool invocations from LangChain message history and stores them as `Tool` nodes linked to decision traces via `USED_TOOL` relationships. This enables usage analytics, debugging, and feeds tool data into skill synthesis.
 
 ## How It Works
 
-When the Reasoning Extractor saves a decision trace, it also extracts all tool calls from the agent's message history and creates `ToolCall` nodes linked to the trace via `USED_TOOL`.
+When the Reasoning Extractor saves a decision trace, it scans the agent's message history for tool calls and their results:
+
+1. AI messages contain `tool_calls` (name, args, call ID)
+2. Tool messages contain results (matched by call ID)
+3. Each unique tool name gets a reusable `Tool` node (merged, not duplicated)
+4. The trace is linked to each tool via a `USED_TOOL` relationship
 
 ```
-(DecisionTrace) --USED_TOOL--> (ToolCall {name: "search_knowledge_base", args: '{"query": "..."}', result: "..."})
-(DecisionTrace) --USED_TOOL--> (ToolCall {name: "check_account_status", args: '{"email": "..."}', result: "..."})
+(DecisionTrace) --USED_TOOL--> (Tool {name: "search_knowledge_base"})
+(DecisionTrace) --USED_TOOL--> (Tool {name: "check_account_status"})
 ```
 
-## ToolCall Properties
+## ToolCall Interface
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | string | Tool name (e.g., `"search_knowledge_base"`) |
-| `args` | string | JSON-serialized arguments passed to the tool |
-| `result` | string | Tool result (truncated to 500 chars for storage) |
-| `durationMs` | number | Execution time in milliseconds (if available) |
-| `createdAt` | string | ISO timestamp |
+```typescript
+interface ToolCall {
+  id?: string;
+  name: string;        // Tool name (e.g., "search_knowledge_base")
+  args: string;        // JSON-serialized arguments
+  result?: string;     // Tool result (truncated to 500 chars)
+  durationMs?: number; // Execution time in ms (if available)
+  createdAt: string;   // ISO timestamp
+}
+```
 
-## Querying Tool Statistics
+## Tool Statistics
 
-### Project-Wide Stats
+### Project-Wide
 
 ```typescript
 const toolStats = await contextGraph.store.getToolStats();
@@ -34,7 +42,7 @@ const toolStats = await contextGraph.store.getToolStats();
 // ]
 ```
 
-### Per-Agent Stats
+### Per-Agent
 
 ```typescript
 const agentStats = await contextGraph.store.getToolStatsByAgent("support-agent");
@@ -44,15 +52,30 @@ const agentStats = await contextGraph.store.getToolStatsByAgent("support-agent")
 // ]
 ```
 
-## Visualization
+## Tool Data in Skills
 
-ToolCall nodes are first-class graph entities. In the Graphmind visualizer, you can see:
-- Which tools each trace used
-- How frequently each tool is called
-- Which agents use which tools
-- Tool call patterns across domains
+When the lifecycle manager synthesizes Skills from clustered traces, it collects all unique tool names used across the constituent traces and includes them in the Skill:
 
-This is useful for:
-- **Debugging** — understanding which tools influenced a decision
-- **Optimization** — identifying underused or overused tools
-- **Auditing** — tracking tool usage for compliance
+```typescript
+const skills = await contextGraph.lifecycle.synthesizeSkills();
+
+const skill = await contextGraph.store.getSkillByName("handle-account-lockout");
+console.log(skill.tools);
+// ["check_account_status", "search_knowledge_base", "reset_password"]
+```
+
+These tools appear in the Skill's SKILL.md output as `allowed-tools`, making them compatible with the Agent Skills specification:
+
+```yaml
+---
+name: handle-account-lockout
+allowed-tools: check_account_status, search_knowledge_base, reset_password
+---
+```
+
+## Use Cases
+
+- **Debugging** -- See which tools influenced a particular decision trace
+- **Optimization** -- Identify underused or overused tools across agents
+- **Auditing** -- Track tool usage for compliance and governance
+- **Skill quality** -- Understand which tools are associated with high-confidence patterns

@@ -1,20 +1,32 @@
 # Graphmind Context Graphs
 
-A Context Graph middleware for LangChain AI agents. Unlike standard memory that stores **what** happened (transcripts), this middleware captures **why** it happened (Decision Traces). It maps the relationships between Intents, Constraints, and Actions across any domain.
+A "Director's Commentary" middleware for AI agents. Unlike standard memory that stores **what** happened (transcripts), Context Graphs capture **why** it happened — decision traces that map the reasoning between Intents, Constraints, and Actions across any domain.
+
+Agents don't just remember — they build a map of their own brain over time.
+
+## What Makes This Different
+
+| Standard Memory | Context Graphs |
+|---|---|
+| Stores transcripts | Stores **decision reasoning** |
+| Static schema | **Dynamic entities** — agents create their own |
+| No context across sessions | **Semantic retrieval** of past decisions |
+| Knowledge grows noisy | Knowledge is **curated** (validate, synthesize, prune) |
+| Agents start fresh | Agents inherit **institutional wisdom** |
 
 ## Features
 
-- **Decision Trace Capture** - Automatically records agent reasoning as structured Intent/Constraint/Action triplets
-- **Tool Call Tracking** - Records individual tool invocations as graph nodes for visualization and analytics
-- **Ablation Filtering** - Observer LLM identifies which facts actually changed the decision (noise reduction)
-- **Dynamic Prompt Injection** - Injects relevant past reasoning into agent prompts as "Director's Commentary"
-- **Knowledge Lifecycle** - Capture → Validate → Synthesize → Prune pipeline for evolutionary knowledge distillation
-- **Skills (Progressive Disclosure)** - Auto-synthesized skill bundles agents can discover and load on-demand
-- **Multi-Agent** - Agent nodes with configurable context sharing (shared, isolated, selective)
-- **Multi-Tenant** - Full data isolation per tenant via Graphmind graph namespaces
-- **Multi-Project** - Separate project contexts within a tenant
-- **Cross-Domain** - Concept tags link similar decisions across legal, medical, tech, and any other domain
-- **Vector Search** - Semantic similarity retrieval of past decision traces via Graphmind SEARCH clause
+- **Decision Trace Capture** — Automatically records agent reasoning as structured Intent/Constraint/Action/Justification triplets
+- **Dynamic Brain Mapping** — Agents create arbitrary entities and relationships as they discover domain knowledge
+- **Schema Awareness** — Agents inspect the graph schema before creating entities, preventing ambiguity
+- **LLM-Powered Extraction** — Observer model extracts domain, concepts, and constraints intelligently (not regex)
+- **Ablation Filtering** — Observer LLM identifies which facts actually changed the decision (noise reduction)
+- **Dynamic Prompt Injection** — Injects schema overview, past reasoning, rules, and anti-patterns into prompts
+- **Knowledge Lifecycle** — Capture → Validate → Synthesize → Prune for evolutionary distillation
+- **Skills (Progressive Disclosure)** — Auto-synthesized skill bundles agents can discover and load on-demand
+- **Multi-Agent** — Configurable context sharing (shared, isolated, selective)
+- **Multi-Tenant** — Full data isolation per tenant via Graphmind graph namespaces
+- **Vector Search** — Semantic similarity retrieval via Graphmind SEARCH clause
 
 ## Installation
 
@@ -30,7 +42,7 @@ npm install langchain @langchain/core @langchain/langgraph
 
 ### Prerequisites
 
-- A running [Graphmind](https://github.com/fabischkamern/graphmind) instance:
+A running [Graphmind](https://github.com/fabischkamern/graphmind) instance:
 
 ```bash
 docker run -d --name graphmind -p 8080:8080 fabischk/graphmind:latest
@@ -39,374 +51,225 @@ docker run -d --name graphmind -p 8080:8080 fabischk/graphmind:latest
 ## Quick Start
 
 ```typescript
-import { createAgent, tool } from "langchain";
-import { z } from "zod";
+import { createAgent } from "langchain";
 import { createContextGraph } from "graphmind-context-graphs";
 import type { EmbeddingProvider } from "graphmind-context-graphs";
 
-// 1. Create an embedding provider (use your preferred model)
+// 1. Create an embedding provider
 const embeddingProvider: EmbeddingProvider = {
-  embed: async (text) => await yourEmbeddingModel.embed(text),
-  embedBatch: async (texts) => await yourEmbeddingModel.embedBatch(texts),
+  embed: async (text) => await yourModel.embed(text),
+  embedBatch: async (texts) => await yourModel.embedBatch(texts),
   dimensions: 1536,
 };
 
 // 2. Initialize the context graph
-const contextGraph = await createContextGraph({
+const cg = await createContextGraph({
   tenant: "my_company",
-  project: "customer_support",
-  agent: "support-agent", // Agent name for multi-agent tracking
-  agentDescription: "Handles customer inquiries",
-  domain: "support", // Or omit to auto-infer
+  project: "support",
+  agent: "support-agent",
   embedding: {
     provider: embeddingProvider,
     dimensions: 1536,
   },
-  observerModel: "openai:gpt-4.1-mini", // For ablation filtering (optional)
+  observerModel: "openai:gpt-4.1-mini", // Optional: enables LLM extraction + ablation
 });
 
-// 3. Create your agent with context graph middleware
+// 3. Create your agent with middleware AND brain-mapping tools
 const agent = createAgent({
   model: "openai:gpt-4.1",
-  tools: [
-    tool(({ query }) => `Results for: ${query}`, {
-      name: "search",
-      description: "Search the knowledge base",
-      schema: z.object({ query: z.string() }),
-    }),
-  ],
-  middleware: contextGraph.middleware,
+  tools: [...yourTools, ...cg.tools],  // Includes schema inspector + entity builder
+  middleware: cg.middleware,            // Prompt injection + reasoning extraction
 });
 
-// 4. Use the agent - context is captured and injected automatically
+// 4. Use the agent — context is captured and injected automatically
 const result = await agent.invoke({
   messages: [{ role: "user", content: "How do I reset my password?" }],
 });
 
-// 5. Validate outcomes and evolve knowledge
-await contextGraph.lifecycle.validateTrace("trace-id", {
-  traceId: "trace-id",
-  success: true,
-});
-await contextGraph.lifecycle.synthesizeRules();
-await contextGraph.lifecycle.pruneFailures();
+// 5. Evolve knowledge over time
+await cg.lifecycle.validateTrace(traceId, { traceId, success: true });
+await cg.lifecycle.synthesizeRules();
+await cg.lifecycle.pruneFailures();
 ```
 
-## Configuration
-
-```typescript
-interface ContextGraphConfig {
-  graphmind?: {
-    url?: string; // Graphmind server URL (env: GRAPHMIND_URL)
-    token?: string; // Bearer auth token (env: GRAPHMIND_TOKEN)
-    username?: string; // Basic auth username (env: GRAPHMIND_USERNAME)
-    password?: string; // Basic auth password (env: GRAPHMIND_PASSWORD)
-  };
-  tenant: string; // Tenant identifier (maps to graph namespace)
-  project: string; // Project identifier (within tenant)
-  domain?: string; // Explicit domain, or auto-inferred
-  agent?: string; // Agent name for multi-agent systems
-  agentDescription?: string; // Human-readable agent role
-  contextSharing?: ContextSharingPolicy; // "shared" | "isolated" | "selective"
-  allowedAgents?: string[]; // Agents to share with (selective mode)
-  embedding: {
-    provider: EmbeddingProvider; // Your embedding implementation
-    dimensions: number; // Vector dimensions
-    metric?: "cosine" | "l2" | "dot";
-  };
-  observerModel?: string; // Model for ablation filtering
-  vectorSearchLimit?: number; // Top-k results (default: 5)
-  similarityThreshold?: number; // Min similarity for precedent linking (default: 0.7)
-  baseSystemPrompt?: string; // Base system prompt
-  debug?: boolean;
-}
-```
-
-### Environment Variables
-
-Configuration can be provided via environment variables (loaded from `.env` automatically):
-
-| Variable             | Description                                             |
-| -------------------- | ------------------------------------------------------- |
-| `GRAPHMIND_URL`      | Graphmind server URL (default: `http://localhost:8080`) |
-| `GRAPHMIND_TOKEN`    | Bearer auth token                                       |
-| `GRAPHMIND_USERNAME` | Basic auth username                                     |
-| `GRAPHMIND_PASSWORD` | Basic auth password                                     |
-| `OPENAI_API_KEY`     | Required for embedding provider and observer model      |
-
-## Architecture
-
-The middleware operates as a stateful proxy between the user and the LangChain agent:
+## How It Works
 
 ```
 User → [Prompt Injector] → Agent → [Reasoning Extractor] → Context Graph DB
-         ↑ Injects past                   ↓ Captures new
-         reasoning traces                 decision traces
-```
-
-### Graph Structure
-
-```
-(Project) <-BELONGS_TO_PROJECT- (DecisionTrace) -BELONGS_TO_DOMAIN-> (Domain)
-                                      |
-                           PRODUCED_BY-> (Agent) -MEMBER_OF-> (Project)
-                                                 -OPERATES_IN-> (Domain)
-                           HAS_INTENT-> (Intent)
-                           TOOK_ACTION-> (Action)
-                           HAS_CONSTRAINT-> (Constraint)
-                           USED_TOOL-> (ToolCall)
-                           TAGGED_WITH-> (Concept)
-                           PRECEDENT_OF-> (DecisionTrace)
-                           CONTRIBUTES_TO-> (Skill)
-
-(Skill) -BELONGS_TO_PROJECT-> (Project)
-         -DERIVED_FROM_CONCEPT-> (Concept)
-         -BELONGS_TO_DOMAIN-> (Domain)
+         ↑ Injects:                    ↓ Captures:
+         - Schema overview             - Decision traces
+         - Past reasoning              - Tool calls
+         - Rules & anti-patterns       - Domain entities
+         - Skills manifest             - Concepts & relationships
 ```
 
 ### The Triplet Data Model
 
 Every decision is captured as a structured triplet:
 
-| Component         | Description           | Example                                              |
-| ----------------- | --------------------- | ---------------------------------------------------- |
-| **Intent**        | The desired end-state | "Reset user password"                                |
-| **Constraint**    | Blockers or rules     | "Account is locked", "2FA required"                  |
-| **Action**        | The move taken        | "Sent reset email via admin panel"                   |
-| **Justification** | THE "WHY"             | "Admin panel bypass used because account was locked" |
+| Component | Description | Example |
+|---|---|---|
+| **Intent** | The desired end-state | "Reset user password" |
+| **Constraint** | Blockers or rules | "Account is locked", "2FA required" |
+| **Action** | The move taken | "Sent reset email via admin panel" |
+| **Justification** | THE "WHY" | "Admin panel bypass used because account was locked" |
 
-### Core Components
+### Dynamic Brain Mapping
 
-1. **Reasoning Extractor** - LangChain middleware that captures agent reasoning, tool calls, and facts
-2. **Ablation Filter** - Observer LLM that determines which facts are critical to the decision
-3. **Contextual Registry** - Manages semantic generalization, precedent linking, and context sharing
-4. **Prompt Injector** - Injects relevant past logic, established rules, and anti-patterns into prompts
-5. **Knowledge Lifecycle Manager** - Validates traces, promotes rules, and prunes anti-patterns
+The key differentiator: agents create entities that aren't known ahead of time.
+
+```typescript
+// A coding agent discovers codebase structure:
+// create_entity({ label: "CodeFile", properties: { path: "src/auth/login.ts", purpose: "Authentication entry point" }})
+// create_entity({ label: "Constraint", properties: { name: "rate-limiting", reason: "Added after brute-force incident" }})
+// create_relationship({ source_id: "1", target_id: "2", relationship_type: "ENFORCES" })
+
+// A legal agent maps contract structure:
+// create_entity({ label: "Contract", properties: { name: "DataCorp Agreement", type: "vendor" }})
+// create_entity({ label: "Regulation", properties: { name: "GDPR", jurisdiction: "EU" }})
+// create_relationship({ source_id: "3", target_id: "4", relationship_type: "GOVERNED_BY" })
+```
+
+Agents use `inspect_schema` to see what entities already exist before creating new ones, preventing ambiguity.
 
 ### Knowledge Lifecycle
 
 ```
-Capture → Validate → Synthesize → Prune → Skill Synthesis
-  ↓          ↓           ↓          ↓          ↓
-Record    Observe     Promote    Mark as    Cluster rules
-trace     outcome     to rule    anti-pat.  into skills
+Capture → Validate → Synthesize → Prune
+  ↓          ↓           ↓          ↓
+Record    Observe     Promote    Mark as
+trace     outcome     to rule    anti-pattern
 ```
 
-## Skills (Progressive Disclosure)
+Raw traces evolve into institutional wisdom through validation and synthesis. Failed approaches are pruned as anti-patterns.
 
-Skills are curated bundles of validated decision patterns, auto-synthesized when multiple synthesized traces share a concept. Agents discover skills via a lightweight manifest and load them on-demand.
+## Agent Tools
+
+`createContextGraph()` returns these tools automatically via `cg.tools`:
+
+| Tool | Description |
+|---|---|
+| `inspect_schema` | View existing entity types and relationships in the graph |
+| `query_graph` | Execute read-only Cypher queries to explore the graph |
+| `create_entity` | Create a new entity node (CodeFile, Contract, etc.) |
+| `create_relationship` | Connect two entities with a typed relationship |
+| `find_entities` | Search existing entities by label and properties |
+
+Additional skill tools (add separately):
 
 ```typescript
-// After promoting rules, auto-create skills
-await contextGraph.lifecycle.synthesizeRules();
-const skills = await contextGraph.lifecycle.synthesizeSkills();
-// ["handle-account-lockout", "handle-rate-limiting"]
-
-// Add skill tools to your agent for on-demand loading
-import {
-  createSkillTool,
-  createListSkillsTool,
-} from "graphmind-context-graphs";
+import { createSkillTool, createListSkillsTool } from "graphmind-context-graphs";
 
 const agent = createAgent({
-  model: "openai:gpt-4.1",
   tools: [
-    ...yourTools,
-    createSkillTool(contextGraph.store), // load_skill tool
-    createListSkillsTool(contextGraph.store), // list_skills tool
+    ...cg.tools,
+    createSkillTool(cg.store),      // load_skill
+    createListSkillsTool(cg.store), // list_skills
   ],
-  middleware: contextGraph.middleware,
+  middleware: cg.middleware,
 });
 ```
 
-The prompt injector automatically injects a skill manifest. When the agent recognizes a relevant skill, it calls `load_skill("handle-account-lockout")` to get the full context.
-
 ## Multi-Agent Systems
 
-Multiple agents can share a project with configurable context sharing:
+Multiple agents share a project with configurable context sharing:
 
 ```typescript
-// Legal agent — shares context with compliance agent only
 const legalCG = await createContextGraph({
-  tenant: "enterprise",
-  project: "ops",
-  domain: "legal",
-  agent: "legal-agent",
+  tenant: "enterprise", project: "ops",
+  agent: "legal-agent", domain: "legal",
   contextSharing: "selective",
   allowedAgents: ["compliance-agent"],
   embedding: { provider, dimensions: 1536 },
 });
 
-// Medical agent — isolated, sees only its own traces
-const medicalCG = await createContextGraph({
-  tenant: "enterprise",
-  project: "ops",
-  domain: "medical",
-  agent: "medical-agent",
-  contextSharing: "isolated",
-  embedding: { provider, dimensions: 1536 },
-});
-
-// Tech agent — shared, sees all traces in the project
 const techCG = await createContextGraph({
-  tenant: "enterprise",
-  project: "ops",
-  domain: "tech",
-  agent: "tech-agent",
-  contextSharing: "shared",
+  tenant: "enterprise", project: "ops",
+  agent: "tech-agent", domain: "tech",
+  contextSharing: "shared",  // Sees all traces including legal
   embedding: { provider, dimensions: 1536 },
 });
 ```
 
-### Context Sharing Policies
+| Policy | Description | Use Case |
+|---|---|---|
+| `shared` | All agents see all traces (default) | Collaborative teams |
+| `isolated` | Agents see only their own traces | Privacy-sensitive domains |
+| `selective` | Own + allowed agents' traces | Controlled cross-domain learning |
 
-| Policy      | Description                             | Use Case                         |
-| ----------- | --------------------------------------- | -------------------------------- |
-| `shared`    | All agents see all traces (default)     | Collaborative teams              |
-| `isolated`  | Agents see only their own traces        | Privacy-sensitive domains        |
-| `selective` | Agents see own + allowed agents' traces | Controlled cross-domain learning |
-
-## Multi-Tenancy
-
-Each tenant gets a fully isolated Graphmind graph namespace:
+## Configuration
 
 ```typescript
-// Tenant A - completely isolated
-const tenantA = await createContextGraph({
-  tenant: "company_alpha",
-  project: "support",
-  embedding: { provider, dimensions: 1536 },
-});
-
-// Tenant B - separate graph, no data leakage
-const tenantB = await createContextGraph({
-  tenant: "company_beta",
-  project: "support",
-  embedding: { provider, dimensions: 1536 },
-});
+interface ContextGraphConfig {
+  graphmind?: {
+    url?: string;       // Default: http://localhost:8080 (env: GRAPHMIND_URL)
+    token?: string;     // Bearer auth (env: GRAPHMIND_TOKEN)
+    username?: string;  // Basic auth (env: GRAPHMIND_USERNAME)
+    password?: string;  // Basic auth (env: GRAPHMIND_PASSWORD)
+  };
+  tenant: string;                        // Tenant → graph namespace
+  project: string;                       // Project scope within tenant
+  domain?: string;                       // Explicit domain, or auto-inferred
+  agent?: string;                        // Agent name for multi-agent
+  agentDescription?: string;             // Human-readable agent role
+  contextSharing?: ContextSharingPolicy; // "shared" | "isolated" | "selective"
+  allowedAgents?: string[];              // For selective sharing
+  embedding: {
+    provider: EmbeddingProvider;
+    dimensions: number;
+    metric?: "cosine" | "l2" | "dot";
+  };
+  observerModel?: string;               // For LLM extraction + ablation filtering
+  vectorSearchLimit?: number;            // Top-k results (default: 5)
+  similarityThreshold?: number;          // Precedent linking threshold (default: 0.7)
+  baseSystemPrompt?: string;
+  debug?: boolean;
+}
 ```
-
-## API Reference
-
-### `createContextGraph(config)`
-
-Factory function that initializes the context graph and returns:
-
-| Property     | Type                        | Description                                              |
-| ------------ | --------------------------- | -------------------------------------------------------- |
-| `middleware` | `Middleware[]`              | Array of LangChain middleware to pass to `createAgent()` |
-| `registry`   | `ContextualRegistry`        | Direct access to context read/write operations           |
-| `lifecycle`  | `KnowledgeLifecycleManager` | Validate, synthesize, and prune traces                   |
-| `store`      | `GraphmindStore`            | Direct database access for advanced queries              |
-
-### `GraphmindStore`
-
-| Method                              | Description                                        |
-| ----------------------------------- | -------------------------------------------------- |
-| `getToolStats()`                    | Get tool usage statistics for the project          |
-| `getToolStatsByAgent(name)`         | Get tool usage statistics for a specific agent     |
-| `getAgentsByProject()`              | Get all agents in the project                      |
-| `getConceptsByProject()`            | Get all concept tags with trace counts             |
-| `getTracesByConcept(name)`          | Get all traces tagged with a concept               |
-| `tagTraceWithConcept(id, name)`     | Tag a trace with a concept                         |
-| `getSkillsByProject()`              | Get all skills for the project                     |
-| `getSkillByName(name)`              | Get a specific skill with full details             |
-| `findSimilarTraces(vector, limit?)` | Vector similarity search (respects sharing policy) |
-
-### `KnowledgeLifecycleManager`
-
-| Method                         | Description                                                   |
-| ------------------------------ | ------------------------------------------------------------- |
-| `validateTrace(id, result)`    | Record whether a trace's outcome was successful               |
-| `synthesizeRules(options?)`    | Promote high-confidence validated traces to permanent rules   |
-| `synthesizeSkills(minTraces?)` | Auto-create skills from clustered synthesized traces          |
-| `pruneFailures(options?)`      | Mark low-confidence traces as anti-patterns                   |
-| `getLifecycleStats()`          | Get counts by status (captured, validated, synthesized, etc.) |
-
-### `ContextualRegistry`
-
-| Method                       | Description                                                           |
-| ---------------------------- | --------------------------------------------------------------------- |
-| `getRelevantContext(intent)` | Retrieve past traces, rules, and anti-patterns by semantic similarity |
-| `recordDecision(trace)`      | Save a new decision trace with auto-generated embeddings              |
-| `isDiscoveryMode()`          | Check if this is the first-ever decision (no prior traces)            |
 
 ## Examples
 
-### Single-Agent Support Demo
-
 ```bash
+# Basic decision trace capture & replay
 npm run example
+
+# Coding agent with brain mapping
+npm run example:coding
+
+# Multi-agent shared context
+npm run example:multi-agent
 ```
-
-Runs a helpdesk agent through three conversations (locked account, another locked account, API rate limits) demonstrating trace capture, context injection, and concept tagging.
-
-### Multi-Domain Agent Demo
-
-```bash
-npm run example:multi-domain
-```
-
-Runs three agents (legal, medical, tech) in the same project demonstrating:
-
-- Cross-domain context sharing
-- Domain-specific tool usage
-- Agent and tool call visualization
-- Concept tags linking traces across domains
 
 ## Documentation
 
-See the [Context Graph Docs](Context%20Graph%20Docs/) for detailed documentation:
+See [Context Graph Docs](Context%20Graph%20Docs/) for detailed guides:
 
-1. [Data Model](Context%20Graph%20Docs/01-data-model.md) - Triplet model, node types, graph structure
-2. [Reasoning Extractor](Context%20Graph%20Docs/02-reasoning-extractor.md) - How agent reasoning is captured
-3. [Contextual Registry](Context%20Graph%20Docs/03-contextual-registry.md) - Context retrieval and semantic generalization
-4. [Prompt Injector](Context%20Graph%20Docs/04-prompt-injector.md) - How past context is injected into prompts
-5. [Knowledge Lifecycle](Context%20Graph%20Docs/05-knowledge-lifecycle.md) - Capture → Validate → Synthesize → Prune
-6. [Multi-Agent Systems](Context%20Graph%20Docs/06-multi-agent.md) - Agent nodes and context sharing policies
-7. [Tool Call Tracking](Context%20Graph%20Docs/07-tool-calls.md) - Tool usage visualization and statistics
-8. [Skills](Context%20Graph%20Docs/08-skills.md) - Progressive disclosure with auto-synthesized skills
+1. [Data Model](Context%20Graph%20Docs/01-data-model.md) — Triplet model, dynamic entities, graph structure
+2. [Reasoning Extractor](Context%20Graph%20Docs/02-reasoning-extractor.md) — LLM-powered decision capture
+3. [Contextual Registry](Context%20Graph%20Docs/03-contextual-registry.md) — Semantic retrieval and recording
+4. [Prompt Injector](Context%20Graph%20Docs/04-prompt-injector.md) — Schema-aware dynamic prompt enrichment
+5. [Knowledge Lifecycle](Context%20Graph%20Docs/05-knowledge-lifecycle.md) — Capture → Validate → Synthesize → Prune
+6. [Multi-Agent Systems](Context%20Graph%20Docs/06-multi-agent.md) — Agent nodes and sharing policies
+7. [Tool Call Tracking](Context%20Graph%20Docs/07-tool-calls.md) — Tool usage visualization and statistics
+8. [Skills](Context%20Graph%20Docs/08-skills.md) — Progressive disclosure with auto-synthesized skills
+9. [Schema Inspector](Context%20Graph%20Docs/09-schema-inspector.md) — Schema awareness and graph exploration
+10. [Entity Builder](Context%20Graph%20Docs/10-entity-builder.md) — Dynamic brain mapping with custom entities
 
 ## Testing
 
 ```bash
-# Run unit tests
-npm test
-
-# Run integration tests (requires running Graphmind)
-GRAPHMIND_URL=http://localhost:8080 npm run test:integration
-
-# Run example agent tests (requires Graphmind + OpenAI API key)
-GRAPHMIND_URL=http://localhost:8080 OPENAI_API_KEY=sk-... npm run test:examples
+npm test                    # Unit tests
+npm run lint                # Type checking
+npm run build               # Build for distribution
 ```
 
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Type check
-npm run lint
-
-# Build
-npm run build
-
-# Watch mode
-npm run dev
-```
-
-## ❤️ Sponsor GraphMind
+## Sponsor GraphMind
 
 If GraphMind is useful to you, consider sponsoring:
 
-👉 https://github.com/sponsors/fab679
+https://github.com/sponsors/fab679
 
-Your support helps:
-
-- Improve performance & scaling
-- Expand OpenCypher support
-- Build LLM-native graph features
+Your support helps improve performance, expand OpenCypher support, and build LLM-native graph features.
 
 ## License
 

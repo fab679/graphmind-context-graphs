@@ -10,13 +10,12 @@ describe("Skills", () => {
   });
 
   describe("SKILL_QUERIES", () => {
-    it("should merge a skill by name with all properties", () => {
+    it("should have a merge skill query with upsert semantics", () => {
       expect(SKILL_QUERIES.mergeSkill).toContain("MERGE");
       expect(SKILL_QUERIES.mergeSkill).toContain(":Skill");
       expect(SKILL_QUERIES.mergeSkill).toContain("$name");
       expect(SKILL_QUERIES.mergeSkill).toContain("$prompt");
       expect(SKILL_QUERIES.mergeSkill).toContain("$confidence");
-      expect(SKILL_QUERIES.mergeSkill).toContain("$traceCount");
       expect(SKILL_QUERIES.mergeSkill).toContain("ON CREATE SET");
       expect(SKILL_QUERIES.mergeSkill).toContain("ON MATCH SET");
     });
@@ -58,10 +57,10 @@ describe("Skills", () => {
       expect(SKILL_QUERIES.getSkillByName).toContain("USED_TOOL");
     });
 
-    it("should group synthesized traces by concept for auto-skill creation", () => {
-      expect(SKILL_QUERIES.getSynthesizedTracesByConcept).toContain("'synthesized'");
-      expect(SKILL_QUERIES.getSynthesizedTracesByConcept).toContain("TAGGED_WITH");
-      expect(SKILL_QUERIES.getSynthesizedTracesByConcept).toContain("$project");
+    it("should query synthesized traces with concepts for skill creation", () => {
+      expect(SKILL_QUERIES.getSynthesizedTracesWithConcepts).toContain("'synthesized'");
+      expect(SKILL_QUERIES.getSynthesizedTracesWithConcepts).toContain("TAGGED_WITH");
+      expect(SKILL_QUERIES.getSynthesizedTracesWithConcepts).toContain("$project");
     });
   });
 });

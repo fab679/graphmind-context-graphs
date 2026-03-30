@@ -20,7 +20,7 @@ export async function bootstrapSchema(
     SCHEMA_QUERIES.createProjectIndex,
     SCHEMA_QUERIES.createDomainIndex,
     SCHEMA_QUERIES.createConceptIndex,
-    SCHEMA_QUERIES.createToolCallIndex,
+    SCHEMA_QUERIES.createToolIndex,
     SCHEMA_QUERIES.createAgentIndex,
     SCHEMA_QUERIES.createSkillIndex,
   ];

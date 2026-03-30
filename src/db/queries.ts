@@ -1,24 +1,26 @@
 export const SCHEMA_QUERIES = {
   // Property indexes
-  createIntentIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Intent) ON (n.description)`,
-  createConstraintIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Constraint) ON (n.description)`,
-  createActionIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Action) ON (n.description)`,
-  createTraceIndex: `CREATE INDEX IF NOT EXISTS FOR (n:DecisionTrace) ON (n.status)`,
-  createProjectIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Project) ON (n.name)`,
-  createDomainIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Domain) ON (n.name)`,
-  createConceptIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Concept) ON (n.name)`,
-  createToolCallIndex: `CREATE INDEX IF NOT EXISTS FOR (n:ToolCall) ON (n.name)`,
-  createAgentIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Agent) ON (n.name)`,
-  createSkillIndex: `CREATE INDEX IF NOT EXISTS FOR (n:Skill) ON (n.name)`,
+  createIntentIndex: `CREATE INDEX idx_intent_description IF NOT EXISTS FOR (n:Intent) ON (n.description)`,
+  createConstraintIndex: `CREATE INDEX idx_constraint_description IF NOT EXISTS FOR (n:Constraint) ON (n.description)`,
+  createActionIndex: `CREATE INDEX idx_action_description IF NOT EXISTS FOR (n:Action) ON (n.description)`,
+  createTraceIndex: `CREATE INDEX idx_trace_status IF NOT EXISTS FOR (n:DecisionTrace) ON (n.status)`,
+  createProjectIndex: `CREATE INDEX idx_project_name IF NOT EXISTS FOR (n:Project) ON (n.name)`,
+  createDomainIndex: `CREATE INDEX idx_domain_name IF NOT EXISTS FOR (n:Domain) ON (n.name)`,
+  createConceptIndex: `CREATE INDEX idx_concept_name IF NOT EXISTS FOR (n:Concept) ON (n.name)`,
+  createToolIndex: `CREATE INDEX idx_tool_name IF NOT EXISTS FOR (n:Tool) ON (n.name)`,
+  createAgentIndex: `CREATE INDEX idx_agent_name IF NOT EXISTS FOR (n:Agent) ON (n.name)`,
+  createSkillIndex: `CREATE INDEX idx_skill_name IF NOT EXISTS FOR (n:Skill) ON (n.name)`,
 
-  // Vector indexes (named, using Graphmind's FOR/ON syntax)
+  // Vector indexes
   createIntentVectorIndex: (dimensions: number, metric: string) =>
-    `CREATE VECTOR INDEX intent_embedding FOR (n:Intent) ON (n.embedding) OPTIONS {dimensions: ${dimensions}, similarity: '${metric}'}`,
+    `CREATE VECTOR INDEX intent_embedding IF NOT EXISTS FOR (n:Intent) ON (n.embedding) OPTIONS {dimensions: ${dimensions}, similarity: '${metric}'}`,
   createTraceVectorIndex: (dimensions: number, metric: string) =>
-    `CREATE VECTOR INDEX trace_embedding FOR (n:DecisionTrace) ON (n.embedding) OPTIONS {dimensions: ${dimensions}, similarity: '${metric}'}`,
+    `CREATE VECTOR INDEX trace_embedding IF NOT EXISTS FOR (n:DecisionTrace) ON (n.embedding) OPTIONS {dimensions: ${dimensions}, similarity: '${metric}'}`,
   createConceptVectorIndex: (dimensions: number, metric: string) =>
-    `CREATE VECTOR INDEX concept_embedding FOR (n:Concept) ON (n.embedding) OPTIONS {dimensions: ${dimensions}, similarity: '${metric}'}`,
+    `CREATE VECTOR INDEX concept_embedding IF NOT EXISTS FOR (n:Concept) ON (n.embedding) OPTIONS {dimensions: ${dimensions}, similarity: '${metric}'}`,
 };
+
+// ── Structural Node Queries (MERGE for idempotent creation) ───────────────────
 
 export const PROJECT_QUERIES = {
   mergeProject: `
@@ -30,10 +32,6 @@ export const PROJECT_QUERIES = {
     MERGE (p:Project {name: $name, tenant: $tenant})
     ON CREATE SET p.createdAt = $createdAt
     RETURN id(p) AS projectId
-  `,
-  getProject: `
-    MATCH (p:Project {name: $name, tenant: $tenant})
-    RETURN p
   `,
 };
 
@@ -48,14 +46,9 @@ export const DOMAIN_QUERIES = {
     ON CREATE SET d.createdAt = $createdAt
     RETURN id(d) AS domainId
   `,
-  getDomain: `
-    MATCH (d:Domain {name: $name})
-    RETURN d
-  `,
 };
 
 export const AGENT_QUERIES = {
-  /** MERGE an Agent node within a project. */
   mergeAgent: `
     MERGE (ag:Agent {name: $name})
     ON CREATE SET ag.description = $description, ag.createdAt = $createdAt
@@ -66,17 +59,16 @@ export const AGENT_QUERIES = {
     ON CREATE SET ag.createdAt = $createdAt
     RETURN id(ag) AS agentId
   `,
-  /** Link an Agent to a Project. */
   linkAgentToProject: `
-    MATCH (ag:Agent {name: $agentName}), (p:Project {name: $project, tenant: $tenant})
+    MATCH (ag:Agent {name: $agentName})
+    MERGE (p:Project {name: $project, tenant: $tenant})
     MERGE (ag)-[:MEMBER_OF]->(p)
   `,
-  /** Link an Agent to a Domain. */
   linkAgentToDomain: `
-    MATCH (ag:Agent {name: $agentName}), (d:Domain {name: $domain})
+    MATCH (ag:Agent {name: $agentName})
+    MERGE (d:Domain {name: $domain})
     MERGE (ag)-[:OPERATES_IN]->(d)
   `,
-  /** Get all agents in a project. */
   getAgentsByProject: `
     MATCH (ag:Agent)-[:MEMBER_OF]->(p:Project {name: $project, tenant: $tenant})
     RETURN ag.name AS name, ag.description AS description
@@ -94,6 +86,12 @@ export const CONCEPT_QUERIES = {
     ON CREATE SET c.createdAt = $createdAt
     RETURN id(c) AS conceptId
   `,
+  updateConceptEmbedding: `
+    MATCH (c:Concept {name: $name})
+    SET c.embedding = $embedding
+    RETURN id(c) AS conceptId
+  `,
+  /** Link trace to concept. ensureConcept() must be called first. */
   linkTraceToConcept: `
     MATCH (t:DecisionTrace), (c:Concept {name: $conceptName})
     WHERE id(t) = $traceId
@@ -114,43 +112,46 @@ export const CONCEPT_QUERIES = {
   `,
 };
 
-export const TOOLCALL_QUERIES = {
-  /** Create a ToolCall node and link it to a trace. */
-  createToolCallForTrace: `
-    MATCH (t:DecisionTrace)
-    WHERE id(t) = $traceId
-    CREATE (t)-[:USED_TOOL]->(tc:ToolCall {
-      name: $name,
-      args: $args,
-      result: $result,
-      durationMs: $durationMs,
-      createdAt: $createdAt
-    })
-    RETURN id(tc) AS toolCallId
+export const TOOL_QUERIES = {
+  /** MERGE a reusable Tool node (one per unique tool name). */
+  mergeTool: `
+    MERGE (tool:Tool {name: $name})
+    ON CREATE SET tool.createdAt = $createdAt
+    RETURN id(tool) AS toolId
   `,
-  /** Get all tool calls for a trace. */
-  getToolCallsByTrace: `
-    MATCH (t:DecisionTrace)-[:USED_TOOL]->(tc:ToolCall)
+
+  /** Link trace to tool. ensureTool() must be called first. */
+  linkTraceToTool: `
+    MATCH (t:DecisionTrace), (tool:Tool {name: $toolName})
     WHERE id(t) = $traceId
-    RETURN tc
-    ORDER BY tc.createdAt ASC
+    CREATE (t)-[:USED_TOOL]->(tool)
   `,
+
+  /** Get all tool usages for a trace. */
+  getToolUsageByTrace: `
+    MATCH (t:DecisionTrace)-[r:USED_TOOL]->(tool:Tool)
+    WHERE id(t) = $traceId
+    RETURN tool.name AS name, r.args AS args, r.result AS result, r.durationMs AS durationMs, r.createdAt AS createdAt
+    ORDER BY r.createdAt ASC
+  `,
+
   /** Get tool usage statistics across a project. */
   getToolStatsByProject: `
-    MATCH (p:Project {name: $project})<-[:BELONGS_TO_PROJECT]-(t:DecisionTrace)-[:USED_TOOL]->(tc:ToolCall)
-    RETURN tc.name AS toolName, count(tc) AS callCount
+    MATCH (p:Project {name: $project})<-[:BELONGS_TO_PROJECT]-(t:DecisionTrace)-[r:USED_TOOL]->(tool:Tool)
+    RETURN tool.name AS toolName, count(r) AS callCount
     ORDER BY callCount DESC
   `,
+
   /** Get tool usage statistics for a specific agent. */
   getToolStatsByAgent: `
-    MATCH (ag:Agent {name: $agentName})<-[:PRODUCED_BY]-(t:DecisionTrace)-[:USED_TOOL]->(tc:ToolCall)
-    RETURN tc.name AS toolName, count(tc) AS callCount
+    MATCH (ag:Agent {name: $agentName})<-[:PRODUCED_BY]-(t:DecisionTrace)-[r:USED_TOOL]->(tool:Tool)
+    RETURN tool.name AS toolName, count(r) AS callCount
     ORDER BY callCount DESC
   `,
 };
 
 export const SKILL_QUERIES = {
-  /** Create or update a Skill node. */
+  /** Upsert a Skill node. */
   mergeSkill: `
     MERGE (s:Skill {name: $name})
     ON CREATE SET
@@ -169,32 +170,24 @@ export const SKILL_QUERIES = {
     RETURN id(s) AS skillId
   `,
 
-  /** Link a Skill to a Project. */
   linkSkillToProject: `
     MATCH (s:Skill {name: $skillName}), (p:Project {name: $project, tenant: $tenant})
     MERGE (s)-[:BELONGS_TO_PROJECT]->(p)
   `,
-
-  /** Link a Skill to a Concept it was derived from. */
   linkSkillToConcept: `
     MATCH (s:Skill {name: $skillName}), (c:Concept {name: $conceptName})
     MERGE (s)-[:DERIVED_FROM_CONCEPT]->(c)
   `,
-
-  /** Link a Skill to a Domain. */
   linkSkillToDomain: `
     MATCH (s:Skill {name: $skillName}), (d:Domain {name: $domain})
     MERGE (s)-[:BELONGS_TO_DOMAIN]->(d)
   `,
-
-  /** Link a synthesized trace to the skill it contributed to. */
   linkTraceToSkill: `
     MATCH (t:DecisionTrace), (s:Skill {name: $skillName})
     WHERE id(t) = $traceId
     MERGE (t)-[:CONTRIBUTES_TO]->(s)
   `,
 
-  /** Get all skills for a project (lightweight manifest). */
   getSkillsByProject: `
     MATCH (s:Skill)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     OPTIONAL MATCH (s)-[:DERIVED_FROM_CONCEPT]->(c:Concept)
@@ -202,43 +195,35 @@ export const SKILL_QUERIES = {
     RETURN s, collect(DISTINCT c.name) AS concepts, d.name AS domain
     ORDER BY s.confidence DESC
   `,
-
-  /** Get a single skill by name with full details. */
   getSkillByName: `
     MATCH (s:Skill {name: $name})
     OPTIONAL MATCH (s)-[:DERIVED_FROM_CONCEPT]->(c:Concept)
     OPTIONAL MATCH (s)-[:BELONGS_TO_DOMAIN]->(d:Domain)
     OPTIONAL MATCH (t:DecisionTrace)-[:CONTRIBUTES_TO]->(s)
-    OPTIONAL MATCH (t)-[:USED_TOOL]->(tc:ToolCall)
-    RETURN s, collect(DISTINCT c.name) AS concepts, d.name AS domain, collect(DISTINCT tc.name) AS tools
+    OPTIONAL MATCH (t)-[:USED_TOOL]->(tool:Tool)
+    RETURN s, collect(DISTINCT c.name) AS concepts, d.name AS domain, collect(DISTINCT tool.name) AS tools
   `,
 
-  /** Get synthesized traces grouped by their shared concepts (for auto-skill creation). */
-  getSynthesizedTracesByConcept: `
+  getSynthesizedTracesWithConcepts: `
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     WHERE t.status = 'synthesized'
     MATCH (t)-[:TAGGED_WITH]->(c:Concept)
     OPTIONAL MATCH (t)-[:HAS_INTENT]->(i:Intent)
     OPTIONAL MATCH (t)-[:TOOK_ACTION]->(a:Action)
     OPTIONAL MATCH (t)-[:BELONGS_TO_DOMAIN]->(d:Domain)
-    OPTIONAL MATCH (t)-[:USED_TOOL]->(tc:ToolCall)
-    RETURN c.name AS concept, collect(DISTINCT {
-      traceId: id(t),
-      intent: i.description,
-      action: a.description,
-      justification: t.justification_description,
-      confidence: t.justification_confidence,
-      domain: d.name,
-      tools: collect(DISTINCT tc.name)
-    }) AS traces
-    ORDER BY size(traces) DESC
+    RETURN c.name AS concept, id(t) AS traceId, i.description AS intent, a.description AS action, t.justification_description AS justification, t.justification_confidence AS confidence, d.name AS domain
+    ORDER BY concept
   `,
 };
 
 export const TRACE_QUERIES = {
-  /** Create trace + intent + action (domain removed from properties — linked via relationship). */
+  /**
+   * Create trace + intent + action with inline relationships and name properties.
+   * Names are truncated descriptions for visualization in Graphmind UI.
+   */
   createDecisionTrace: `
     CREATE (t:DecisionTrace {
+      name: $trace_name,
       status: $status,
       justification_description: $justification_description,
       justification_confidence: $justification_confidence,
@@ -248,11 +233,13 @@ export const TRACE_QUERIES = {
       updatedAt: $updatedAt
     })
     CREATE (i:Intent {
+      name: $intent_name,
       description: $intent_description,
       embedding: $intent_embedding,
       createdAt: $createdAt
     })
     CREATE (a:Action {
+      name: $action_name,
       description: $action_description,
       outcome: $action_outcome,
       embedding: $action_embedding,
@@ -263,31 +250,35 @@ export const TRACE_QUERIES = {
     RETURN id(t) AS traceId
   `,
 
-  /** Link trace to Project node. */
+  /**
+   * Link queries use MATCH on both sides. The ensure* methods must be called
+   * first to guarantee the target node exists.
+   *
+   * NOTE: MATCH+MERGE in a single query creates ghost nodes with empty labels
+   * in Graphmind — another bug with the Issue 3 fix. So we use ensure* + MATCH.
+   */
   linkTraceToProject: `
     MATCH (t:DecisionTrace), (p:Project {name: $project, tenant: $tenant})
     WHERE id(t) = $traceId
     CREATE (t)-[:BELONGS_TO_PROJECT]->(p)
   `,
-
-  /** Link trace to Domain node. */
   linkTraceToDomain: `
     MATCH (t:DecisionTrace), (d:Domain {name: $domain})
     WHERE id(t) = $traceId
     CREATE (t)-[:BELONGS_TO_DOMAIN]->(d)
   `,
-
-  /** Link trace to the Agent that produced it. */
   linkTraceToAgent: `
     MATCH (t:DecisionTrace), (ag:Agent {name: $agentName})
     WHERE id(t) = $traceId
     CREATE (t)-[:PRODUCED_BY]->(ag)
   `,
 
+  /** Create constraint inline from matched trace with name property. */
   createConstraintForTrace: `
     MATCH (t:DecisionTrace)
     WHERE id(t) = $traceId
     CREATE (t)-[:HAS_CONSTRAINT]->(con:Constraint {
+      name: $name,
       description: $description,
       type: $type,
       embedding: $embedding,
@@ -306,8 +297,8 @@ export const TRACE_QUERIES = {
     OPTIONAL MATCH (t)-[:BELONGS_TO_DOMAIN]->(d:Domain)
     OPTIONAL MATCH (t)-[:PRODUCED_BY]->(ag:Agent)
     OPTIONAL MATCH (t)-[:TAGGED_WITH]->(c:Concept)
-    OPTIONAL MATCH (t)-[:USED_TOOL]->(tc:ToolCall)
-    RETURN t, i, collect(DISTINCT con) AS constraints, a, p, d, ag, collect(DISTINCT c) AS concepts, collect(DISTINCT tc) AS toolCalls
+    OPTIONAL MATCH (t)-[tu:USED_TOOL]->(tool:Tool)
+    RETURN t, i, collect(DISTINCT con) AS constraints, a, p, d, ag, collect(DISTINCT c) AS concepts, collect(DISTINCT tool.name) AS toolNames
   `,
 
   updateTraceStatus: `
@@ -316,15 +307,12 @@ export const TRACE_QUERIES = {
     SET t.status = $status, t.updatedAt = $updatedAt
     RETURN t
   `,
-
   updateTraceConfidence: `
     MATCH (t:DecisionTrace)
     WHERE id(t) = $traceId
     SET t.justification_confidence = $confidence, t.updatedAt = $updatedAt
     RETURN t
   `,
-
-  /** Atomically update both status and confidence on a trace. */
   updateTraceStatusAndConfidence: `
     MATCH (t:DecisionTrace)
     WHERE id(t) = $traceId
@@ -332,7 +320,6 @@ export const TRACE_QUERIES = {
     RETURN t
   `,
 
-  /** Get active rules — shared mode (all traces in project). */
   getActiveRules: `
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     WHERE t.status = 'synthesized'
@@ -343,8 +330,6 @@ export const TRACE_QUERIES = {
     RETURN t, i, collect(DISTINCT con) AS constraints, a, collect(DISTINCT c) AS concepts
     ORDER BY t.justification_confidence DESC
   `,
-
-  /** Get active rules — isolated to a specific agent. */
   getActiveRulesByAgent: `
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     MATCH (t)-[:PRODUCED_BY]->(ag:Agent {name: $agentName})
@@ -366,7 +351,6 @@ export const TRACE_QUERIES = {
     RETURN t, i, collect(DISTINCT con) AS constraints, a
     ORDER BY t.updatedAt DESC
   `,
-
   getAntiPatternsByAgent: `
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     MATCH (t)-[:PRODUCED_BY]->(ag:Agent {name: $agentName})
@@ -388,8 +372,6 @@ export const TRACE_QUERIES = {
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     RETURN count(t) AS count
   `,
-
-  /** Count traces for a specific agent within a project. */
   countTracesByAgent: `
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     MATCH (t)-[:PRODUCED_BY]->(ag:Agent {name: $agentName})
@@ -400,8 +382,6 @@ export const TRACE_QUERIES = {
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     RETURN t.status AS status, count(t) AS count
   `,
-
-  /** Get trace IDs by status (useful for batch validation). */
   getTraceIdsByStatus: `
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     WHERE t.status = $status
@@ -417,7 +397,6 @@ export const TRACE_QUERIES = {
     OPTIONAL MATCH (t)-[:TOOK_ACTION]->(a:Action)
     RETURN t, i, collect(DISTINCT con) AS constraints, a
   `,
-
   getCandidatesForPruning: `
     MATCH (t:DecisionTrace)-[:BELONGS_TO_PROJECT]->(p:Project {name: $project})
     WHERE t.status = 'validated'
@@ -427,7 +406,6 @@ export const TRACE_QUERIES = {
 };
 
 export const VECTOR_QUERIES = {
-  /** Vector must be inlined as a literal — Graphmind SEARCH does not accept $params for vectors. */
   searchSimilarTraces: (vectorLiteral: string, topK: number) => `
     MATCH (t:DecisionTrace)
       SEARCH t IN (
@@ -446,7 +424,6 @@ export const VECTOR_QUERIES = {
     ORDER BY similarity DESC
   `,
 
-  /** Search traces scoped to specific agent(s) — for isolated/selective sharing. */
   searchSimilarTracesByAgents: (vectorLiteral: string, topK: number, agentNames: string[]) => {
     const agentFilter = agentNames.map((n) => `"${n}"`).join(", ");
     return `
@@ -469,7 +446,6 @@ export const VECTOR_QUERIES = {
     `;
   },
 
-  /** Vector must be inlined as a literal — Graphmind SEARCH does not accept $params for vectors. */
   searchSimilarConcepts: (vectorLiteral: string, topK: number) => `
     MATCH (c:Concept)
       SEARCH c IN (

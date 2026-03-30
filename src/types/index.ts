@@ -26,6 +26,9 @@ export type {
   TraceStatus,
   ScoredDecisionTrace,
   FormattedContext,
+  GraphEntity,
+  GraphRelationship,
+  SchemaOverview,
 } from "./data-model.js";
 
 export type {

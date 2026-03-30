@@ -45,20 +45,24 @@ export class ContextualRegistry {
     const limit =
       this.config.vectorSearchLimit ?? DEFAULT_VECTOR_SEARCH_LIMIT;
 
-    const pastTraces = await this.store.findSimilarTraces(embedding, limit);
-    const rules = await this.store.getActiveRules();
-    const antiPatterns = await this.store.getAntiPatterns();
-    const skills = await this.store.getSkillsByProject();
+    const [pastTraces, rules, antiPatterns, skills, schema] = await Promise.all([
+      this.store.findSimilarTraces(embedding, limit),
+      this.store.getActiveRules(),
+      this.store.getAntiPatterns(),
+      this.store.getSkillsByProject(),
+      this.store.getSchemaOverview(),
+    ]);
 
     this.logger.debug(
-      "Retrieved context: %d traces, %d rules, %d anti-patterns, %d skills",
+      "Retrieved context: %d traces, %d rules, %d anti-patterns, %d skills, %d entity types",
       pastTraces.length,
       rules.length,
       antiPatterns.length,
-      skills.length
+      skills.length,
+      schema.nodeLabels.length
     );
 
-    return { pastTraces, rules, antiPatterns, skills };
+    return { pastTraces, rules, antiPatterns, skills, schema };
   }
 
   async recordDecision(
@@ -99,6 +103,18 @@ export class ContextualRegistry {
     };
 
     const traceId = await this.store.saveDecisionTrace(enrichedTrace);
+
+    // Embed concept names and update concept nodes with embeddings
+    if (trace.concepts && trace.concepts.length > 0) {
+      try {
+        const conceptEmbeddings = await this.embeddingProvider.embedBatch(trace.concepts);
+        for (let i = 0; i < trace.concepts.length; i++) {
+          await this.store.ensureConcept(trace.concepts[i], undefined, conceptEmbeddings[i]);
+        }
+      } catch (err) {
+        this.logger.debug("Failed to embed concepts: %s", (err as Error).message);
+      }
+    }
 
     // Semantic generalization: link to similar past traces
     await this.linkPrecedents(traceId, traceEmbedding);

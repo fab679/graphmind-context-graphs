@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graphmind Context Graphs — Blog</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@400;500&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0a0a0f;
+    --paper: #f5f2ea;
+    --accent: #c8421a;
+    --accent2: #1a6bc8;
+    --muted: #8a8070;
+    --rule: #d4cfc3;
+    --card-bg: #ffffff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 19px;
+    line-height: 1.75;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    padding: 18px 0;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .masthead-brand {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .masthead-dot {
+    width: 4px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .masthead-date {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 80px 32px;
+  }
+
+  .page-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .page-tag::before {
+    content: '';
+    display: inline-block;
+    width: 24px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  h1 {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: clamp(38px, 7vw, 64px);
+    line-height: 1.1;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 16px;
+  }
+
+  h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .subtitle {
+    font-size: 22px;
+    color: #3a3530;
+    max-width: 620px;
+    margin-bottom: 60px;
+  }
+
+  .post-list {
+    list-style: none;
+  }
+
+  .post-item {
+    border-top: 1px solid var(--rule);
+    padding: 36px 0;
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.15s ease;
+  }
+
+  .post-item:hover {
+    background: rgba(255,255,255,0.4);
+    margin: 0 -20px;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .post-item:last-child {
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .post-meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .post-meta span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .post-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-size: 28px;
+    line-height: 1.25;
+    font-weight: 400;
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+  }
+
+  .post-excerpt {
+    font-size: 17px;
+    color: #4a4030;
+    line-height: 1.6;
+    max-width: 640px;
+  }
+
+  .post-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .post-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    padding: 4px 10px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    color: var(--muted);
+  }
+
+  .footer {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 32px 80px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .footer a {
+    color: var(--accent2);
+    text-decoration: none;
+  }
+
+  .footer a:hover {
+    text-decoration: underline;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .container > * {
+    animation: fadeUp 0.7s ease both;
+  }
+
+  .container > *:nth-child(1) { animation-delay: 0.05s; }
+  .container > *:nth-child(2) { animation-delay: 0.15s; }
+  .container > *:nth-child(3) { animation-delay: 0.25s; }
+  .container > *:nth-child(4) { animation-delay: 0.35s; }
+
+  @media (max-width: 600px) {
+    .post-title { font-size: 22px; }
+    .container { padding: 48px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <span class="masthead-brand">Graphmind</span>
+  <span class="masthead-dot"></span>
+  <span class="masthead-date">Blog</span>
+  <span class="masthead-dot"></span>
+  <span class="masthead-date">2026</span>
+</header>
+
+<div class="container">
+  <div class="page-tag">Engineering Blog</div>
+  <h1>Graphmind <em>Context Graphs</em></h1>
+  <p class="subtitle">
+    Deep dives into agent architecture, context engineering, and the middleware
+    that gives AI agents persistent reasoning.
+  </p>
+
+  <ul class="post-list">
+    <li>
+      <a class="post-item" href="graphmind-context-graphs-post.html">
+        <div class="post-meta">
+          <span>March 2026</span>
+          <span>9 min read</span>
+          <span>Technical Deep-Dive</span>
+        </div>
+        <div class="post-title">The AI Agent That Knows Why, Not Just What</div>
+        <p class="post-excerpt">
+          Your agents don't have a memory problem. They have a reasoning problem.
+          Context Graphs give AI agents a persistent layer of why &mdash;
+          turning amnesiacs into domain experts that build institutional wisdom
+          with every run. Covers the Decision Trace model, dynamic brain mapping,
+          evolutionary distillation, skills, multi-agent sharing, and getting started
+          with both the TypeScript and Python SDKs.
+        </p>
+        <div class="post-tags">
+          <span class="post-tag">Agent Architecture</span>
+          <span class="post-tag">Context Engineering</span>
+          <span class="post-tag">LangChain</span>
+          <span class="post-tag">Decision Traces</span>
+          <span class="post-tag">TypeScript</span>
+          <span class="post-tag">Python</span>
+          <span class="post-tag">Graph Database</span>
+        </div>
+      </a>
+    </li>
+  </ul>
+</div>
+
+<footer class="footer">
+  <span>Graphmind Context Graphs &mdash; Director's Commentary for AI Agents</span>
+  <span>
+    <a href="https://github.com/fab679/graphmind-context-graphs">GitHub</a>
+  </span>
+</footer>
+
+</body>
+</html>

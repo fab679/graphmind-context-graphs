@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "graphmind-context-graphs"
+version = "0.2.0"
+description = "Director's Commentary middleware for AI agents — captures decision traces, builds dynamic brain maps, and evolves institutional wisdom"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+keywords = ["langchain", "context-graph", "ai-agents", "decision-traces", "middleware", "graphmind", "brain-mapping"]
+dependencies = [
+    "python-dotenv>=1.0",
+    "graphmind>=0.8.6",
+    "pydantic>=2.0",
+    "langchain>=1.2",
+    "langchain-core>1.2",
+    "langgraph>=1.1",
+    "pytest>=9.0.2",
+]
+
+[project.optional-dependencies]
+openai = ["langchain-openai>=1.1"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "langchain-openai>=1.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/graphmind_context_graphs"]

@@ -1,5 +1,6 @@
 import { createMiddleware } from "langchain";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { ContextGraphConfig } from "../types/config.js";
 import type { ToolCall } from "../types/data-model.js";
 import type { ContextualRegistry } from "./contextual-registry.js";
@@ -28,33 +29,32 @@ export function createReasoningExtractor(
 
       const toolCalls = (responseMessage as any).tool_calls ?? [];
 
-      // If no tool calls, agent is finishing - extract and save trace
+      // If no tool calls, agent is finishing — save the decision trace.
+      // The trace captures the intent (user message), action (agent response),
+      // and any reasoning facts from the conversation history.
       if (toolCalls.length === 0 && content) {
-        // Collect reasoning from message history
         const messages = request.messages ?? [];
         const facts = extractFactsFromMessages(messages);
         const capturedToolCalls = extractToolCalls(messages);
+        logger.debug("Extracted %d fact(s), %d tool call(s) from %d message(s)", facts.length, capturedToolCalls.length, messages.length);
         const decision = content;
 
-        // Don't save if no meaningful reasoning was captured
-        if (facts.length > 0) {
-          try {
-            await saveDecisionTrace(
-              facts,
-              decision,
-              messages,
-              capturedToolCalls,
-              config,
-              registry,
-              observerModel,
-              logger
-            );
-          } catch (err) {
-            logger.warn(
-              "Failed to save decision trace: %s",
-              (err as Error).message
-            );
-          }
+        try {
+          await saveDecisionTrace(
+            facts,
+            decision,
+            messages,
+            capturedToolCalls,
+            config,
+            registry,
+            observerModel,
+            logger
+          );
+        } catch (err) {
+          logger.warn(
+            "Failed to save decision trace: %s",
+            (err as Error).message
+          );
         }
       }
 
@@ -69,6 +69,11 @@ export function createReasoningExtractor(
   });
 }
 
+/**
+ * Extract reasoning facts from messages.
+ * Only captures actual reasoning statements from the AI — NOT tool call
+ * strings or raw tool output, which are noise and should not become constraints.
+ */
 function extractFactsFromMessages(messages: unknown[]): string[] {
   const facts: string[] = [];
 
@@ -79,27 +84,19 @@ function extractFactsFromMessages(messages: unknown[]): string[] {
       typeof message.content === "string" ? message.content : "";
 
     if (role === "ai" || role === "assistant") {
-      // Extract reasoning from AI messages
-      if (content) {
+      // Only extract reasoning from AI messages that have NO tool calls
+      // (messages with tool calls are just "I'm going to use X" — not reasoning)
+      const toolCalls = message.tool_calls ?? [];
+      if (toolCalls.length === 0 && content) {
         const sentences = content
           .split(/[.!?]\s+/)
-          .filter((s: string) => s.trim().length > 10);
+          .filter((s: string) => s.trim().length > 20);
         facts.push(...sentences.slice(0, 5));
       }
-
-      // Extract tool call info
-      const toolCalls = message.tool_calls ?? [];
-      for (const tc of toolCalls) {
-        facts.push(
-          `Used tool "${tc.name}" with args: ${JSON.stringify(tc.args)}`
-        );
-      }
-    } else if (role === "tool") {
-      // Tool results provide factual observations
-      if (content && content.length < 500) {
-        facts.push(`Observation: ${content}`);
-      }
     }
+    // Tool results are captured separately as ToolCall nodes — they don't need
+    // to be facts/constraints. The actual reasoning about tool results comes
+    // from the AI's interpretation in subsequent messages.
   }
 
   return facts;
@@ -183,18 +180,39 @@ async function saveDecisionTrace(
         : "Unknown intent"
       : "Unknown intent";
 
-  // Build constraints from critical facts
-  const constraints = criticalFacts.map((fact) => ({
-    description: fact,
-    type: classifyFact(fact),
-    createdAt: new Date().toISOString(),
-  }));
+  // Use LLM for structured extraction if observer model is available
+  let constraints: { description: string; type: "blocker" | "permission" | "pivot"; createdAt: string }[];
+  let concepts: string[];
+  let domain: string;
 
-  // Auto-extract concepts/tags from the decision context
-  const concepts = extractConcepts(intentDescription, decision, criticalFacts);
-
-  // Detect domain from the config or infer from context
-  const domain = config.domain ?? inferDomain(intentDescription, decision);
+  if (observerModel) {
+    const extraction = await extractStructuredContext(
+      intentDescription,
+      decision,
+      criticalFacts,
+      observerModel,
+      logger
+    );
+    constraints = extraction.constraints.map((c) => ({
+      ...c,
+      createdAt: new Date().toISOString(),
+    }));
+    concepts = extraction.concepts;
+    domain = config.domain ?? extraction.domain;
+  } else {
+    // Fallback to heuristic extraction — only create constraints from
+    // facts that contain actual reasoning (not tool artifacts)
+    constraints = criticalFacts
+      .filter((fact) => fact.length > 20 && fact.length < 300)
+      .slice(0, 5)  // Cap at 5 constraints max
+      .map((fact) => ({
+        description: fact,
+        type: classifyFact(fact),
+        createdAt: new Date().toISOString(),
+      }));
+    concepts = extractConceptsFallback(intentDescription, decision, criticalFacts);
+    domain = config.domain ?? inferDomainFallback(intentDescription, decision);
+  }
 
   const trace = {
     intent: {
@@ -208,7 +226,9 @@ async function saveDecisionTrace(
       createdAt: new Date().toISOString(),
     },
     justification: {
-      description: criticalFacts.join("; "),
+      description: criticalFacts.length > 0
+        ? criticalFacts.join("; ")
+        : buildJustificationSummary(intentDescription, capturedToolCalls),
       confidence: isDiscovery ? 0.5 : (ablationScore ?? 0.5),
       ablationScore,
     },
@@ -223,6 +243,126 @@ async function saveDecisionTrace(
 
   await registry.recordDecision(trace);
 }
+
+// ── LLM-Powered Extraction ──────────────────────────────────────────────────
+
+const EXTRACTION_SYSTEM_PROMPT = `You are a Context Extraction Engine for an AI agent's decision graph.
+Given the agent's intent, decision, and facts, extract structured metadata.
+
+Respond with valid JSON matching this schema:
+{
+  "domain": "<string: the domain this interaction belongs to, e.g. 'tech', 'legal', 'medical', 'finance', 'support', 'devops', or a more specific domain>",
+  "concepts": ["<string: semantic tags/concepts, e.g. 'account-lockout', 'api-authentication', 'contract-review'>"],
+  "constraints": [
+    {
+      "description": "<string: what the constraint is>",
+      "type": "<'blocker' | 'permission' | 'pivot'>"
+    }
+  ],
+  "entities": [
+    {
+      "label": "<string: PascalCase entity type discovered, e.g. 'ErrorPattern', 'APIEndpoint'>",
+      "name": "<string: specific name of this entity>"
+    }
+  ]
+}
+
+Guidelines:
+- **domain**: Be specific. "software-engineering" is better than "tech". Use existing domain names when applicable.
+- **concepts**: Extract 1-5 semantic tags that would help find this decision trace later. Think about what future queries would match.
+- **constraints**: Classify each critical fact:
+  - "blocker": something that prevents or blocks an action
+  - "permission": something that enables or allows an action
+  - "pivot": a condition that changes the approach or priority
+- **entities**: Identify domain-specific entities the agent discovered. Only include genuinely new concepts, not generic ones.
+
+Be precise. Quality over quantity.`;
+
+interface StructuredExtraction {
+  domain: string;
+  concepts: string[];
+  constraints: { description: string; type: "blocker" | "permission" | "pivot" }[];
+  entities: { label: string; name: string }[];
+}
+
+async function extractStructuredContext(
+  intent: string,
+  decision: string,
+  facts: string[],
+  model: BaseChatModel,
+  logger: Logger
+): Promise<StructuredExtraction> {
+  const prompt = `## Agent Intent
+${intent}
+
+## Decision Made
+${decision.substring(0, 500)}
+
+## Critical Facts
+${facts.map((f, i) => `[${i}] ${f}`).join("\n")}
+
+Extract the domain, concepts, constraints, and entities. Respond with valid JSON only.`;
+
+  try {
+    const response = await model.invoke([
+      new SystemMessage(EXTRACTION_SYSTEM_PROMPT),
+      new HumanMessage(prompt),
+    ]);
+
+    const content =
+      typeof response.content === "string"
+        ? response.content
+        : JSON.stringify(response.content);
+
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      logger.warn("Structured extraction: no JSON found in response");
+      return fallbackExtraction(intent, decision, facts);
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as StructuredExtraction;
+
+    // Validate and sanitize
+    return {
+      domain: typeof parsed.domain === "string" ? parsed.domain : "general",
+      concepts: Array.isArray(parsed.concepts)
+        ? parsed.concepts.filter((c): c is string => typeof c === "string").slice(0, 10)
+        : [],
+      constraints: Array.isArray(parsed.constraints)
+        ? parsed.constraints
+            .filter((c) => c && typeof c.description === "string")
+            .map((c) => ({
+              description: c.description,
+              type: (["blocker", "permission", "pivot"].includes(c.type) ? c.type : "pivot") as "blocker" | "permission" | "pivot",
+            }))
+        : facts.map((f) => ({ description: f, type: "pivot" as const })),
+      entities: Array.isArray(parsed.entities)
+        ? parsed.entities.filter((e) => e && typeof e.label === "string")
+        : [],
+    };
+  } catch (err) {
+    logger.warn("Structured extraction failed: %s", (err as Error).message);
+    return fallbackExtraction(intent, decision, facts);
+  }
+}
+
+function fallbackExtraction(
+  intent: string,
+  decision: string,
+  facts: string[]
+): StructuredExtraction {
+  return {
+    domain: inferDomainFallback(intent, decision),
+    concepts: extractConceptsFallback(intent, decision, facts),
+    constraints: facts.map((f) => ({
+      description: f,
+      type: classifyFact(f),
+    })),
+    entities: [],
+  };
+}
+
+// ── Heuristic Fallbacks (used when no observer model is available) ───────────
 
 function classifyFact(fact: string): "blocker" | "permission" | "pivot" {
   const lower = fact.toLowerCase();
@@ -248,8 +388,7 @@ function classifyFact(fact: string): "blocker" | "permission" | "pivot" {
   return "pivot";
 }
 
-/** Extract concept/tag keywords from the intent, decision, and facts. */
-function extractConcepts(
+function extractConceptsFallback(
   intent: string,
   decision: string,
   facts: string[]
@@ -258,8 +397,9 @@ function extractConcepts(
   const concepts: string[] = [];
 
   const patterns: [RegExp, string][] = [
-    [/\baccount\s*(lock|block|suspend)/i, "account-lockout"],
-    [/\bpassword\s*(reset|change|forgot)/i, "password-reset"],
+    [/\baccount\s*\w*\s*(lock|block|suspend)|lock\w*\s*(account|out)/i, "account-lockout"],
+    [/\bcan'?t\s*(log\s*in|sign\s*in)|login\s*(fail|error|issue)/i, "account-lockout"],
+    [/\bpassword\s*\w*\s*(reset|change|forgot)|forgot\w*\s*password/i, "password-reset"],
     [/\brate\s*limit/i, "rate-limiting"],
     [/\b429\b|\btoo many requests/i, "rate-limiting"],
     [/\bbilling|payment|invoice|refund/i, "billing"],
@@ -287,8 +427,19 @@ function extractConcepts(
   return concepts;
 }
 
-/** Infer a domain label from the content if none is explicitly configured. */
-function inferDomain(intent: string, decision: string): string {
+/** Build a concise justification when no reasoning facts are available. */
+function buildJustificationSummary(intent: string, toolCalls: ToolCall[]): string {
+  const parts: string[] = [];
+  if (toolCalls.length > 0) {
+    const toolNames = [...new Set(toolCalls.map((tc) => tc.name))];
+    parts.push(`Used ${toolNames.join(", ")}`);
+  }
+  const intentShort = intent.length > 80 ? intent.substring(0, 80) + "..." : intent;
+  parts.push(`to address: ${intentShort}`);
+  return parts.join(" ");
+}
+
+function inferDomainFallback(intent: string, decision: string): string {
   const combined = `${intent} ${decision}`.toLowerCase();
 
   if (/\bapi\b|\bendpoint|\bsdk\b|\brate.?limit|\b429\b/.test(combined)) return "tech";
