@@ -68,7 +68,7 @@ class ReasoningExtractorMiddleware(AgentMiddleware):
 
 def _extract_facts(messages: list) -> list[str]:
     """Extract reasoning facts from AI messages (not tool artifacts)."""
-    facts = []
+    facts: list[str] = []
     for msg in messages:
         role = getattr(msg, "type", None) or getattr(msg, "role", "")
         content = getattr(msg, "content", "")

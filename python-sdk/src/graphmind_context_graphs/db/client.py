@@ -10,7 +10,7 @@ from graphmind import GraphmindClient
 from ..types.config import ResolvedContextGraphConfig, DEFAULT_VECTOR_SEARCH_LIMIT, DEFAULT_METRIC
 from ..types.data_model import (
     DecisionTrace, TraceStatus, ScoredDecisionTrace, Constraint, Intent,
-    Action, Justification, Skill, GraphEntity, GraphRelationship, SchemaOverview,
+    Action, Justification, ToolCallRecord, Skill, GraphEntity, GraphRelationship, SchemaOverview,
 )
 from ..types.lifecycle import LifecycleStats
 from ..utils.logger import create_logger
@@ -590,7 +590,7 @@ def _reconstruct_trace(record: list) -> DecisionTrace:
         justification=Justification(
             description=str(tp.get("justification_description", "")),
             confidence=float(tp.get("justification_confidence", 0)),
-            ablation_score=float(tp.get("justification_ablationScore")) if tp.get("justification_ablationScore") is not None else None,
+            ablation_score=float(tp["justification_ablationScore"]) if tp.get("justification_ablationScore") is not None else None,
         ),
         project="", tenant="",
         status=tp.get("status", "captured"),
