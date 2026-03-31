@@ -1,0 +1,12 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "/^npx vitest run tests/unit/runtime-context\\.test\\.ts$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^npx tsc --project tsconfig\\.json --noEmit$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
+}

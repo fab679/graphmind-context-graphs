@@ -16,6 +16,7 @@ from graphmind_context_graphs.types.data_model import (
 @pytest.fixture
 def mock_store():
     store = MagicMock()
+    store.graph_name = "cg_test"
     store.count_traces.return_value = 0
     store.find_similar_traces.return_value = []
     store.get_active_rules.return_value = []
@@ -25,12 +26,21 @@ def mock_store():
         node_labels=[], relationship_types=[], node_counts={}, edge_counts={},
     )
     store.save_decision_trace.return_value = "1"
+    store.ensure_concept.return_value = None
+    store.create_precedent_link.return_value = None
     return store
 
 
 @pytest.fixture
-def registry(mock_store, fake_embedding, resolved_config):
-    return ContextualRegistry(mock_store, fake_embedding, resolved_config)
+def mock_multi_tenant_store(mock_store):
+    multi_store = MagicMock()
+    multi_store.get_store_for_runtime.return_value = mock_store
+    return multi_store
+
+
+@pytest.fixture
+def registry(mock_multi_tenant_store, fake_embedding, resolved_config):
+    return ContextualRegistry(mock_multi_tenant_store, fake_embedding, resolved_config)
 
 
 class TestDiscoveryMode:
@@ -41,7 +51,7 @@ class TestDiscoveryMode:
     def test_false_when_traces_exist(self, registry, mock_store):
         mock_store.count_traces.return_value = 5
         # Reset cached value
-        registry._discovery_mode = None
+        registry._discovery_mode = {}
         assert registry.is_discovery_mode() is False
 
     def test_caches_result(self, registry, mock_store):
@@ -111,6 +121,6 @@ class TestRecordDecision:
         mock_store.create_precedent_link.assert_called()
 
     def test_resets_discovery_mode(self, registry, sample_trace):
-        registry._discovery_mode = True
+        registry._discovery_mode = {"cg_test": True}
         registry.record_decision(sample_trace)
-        assert registry._discovery_mode is None
+        assert registry._discovery_mode == {}

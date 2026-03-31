@@ -178,3 +178,76 @@ const legalAgent = createAgent({
 ```
 
 All three agents write to the same project graph (`enterprise-ops` under tenant `acme_corp`), but their visibility is controlled by their sharing policy.
+
+## Runtime Tenant Creation
+
+> **NEW** — Dynamically create new tenants from runtime context without code changes.
+
+While the examples above show multiple agents sharing a project within a single tenant, you can also create new tenants on-demand via runtime context. This is perfect for multi-tenant SaaS applications where each customer needs complete data isolation.
+
+### How It Works
+
+When you pass a different tenant in the runtime context, the system automatically:
+
+1. Creates a new isolated graph namespace for that tenant (e.g., `cg_customer123`)
+2. Bootstraps the schema for the new tenant's graph
+3. Routes all queries and writes to the correct tenant's graph
+
+### Example: SaaS Multi-Tenancy
+
+```typescript
+import { createContextGraph } from "graphmind-context-graphs";
+
+// Initialize once with a default/base tenant
+const cg = await createContextGraph({
+  tenant: "default",
+  project: "saas-app",
+  embedding: { provider, dimensions: 1536 },
+});
+
+const agent = createAgent({
+  model: "openai:gpt-4.1",
+  tools: cg.tools,
+  middleware: cg.middleware,
+});
+
+// Each customer request routes to their isolated tenant graph
+async function handleCustomerRequest(customerId: string, message: string) {
+  return await agent.invoke(
+    { messages: [{ role: "user", content: message }] },
+    {
+      context: {
+        tenant: customerId,        // Creates new graph if needed
+        project: "main",
+        agent: "support-agent",
+      },
+    }
+  );
+}
+
+// Customer A - gets their own isolated graph
+await handleCustomerRequest("customer-a", "I need help with billing");
+
+// Customer B - gets a separate isolated graph
+await handleCustomerRequest("customer-b", "How do I reset my password?");
+```
+
+### Data Isolation
+
+Each tenant gets complete isolation:
+
+| Resource | Isolation |
+|----------|-----------|
+| Graph namespace | Separate (`cg_customer-a`, `cg_customer-b`) |
+| Decision traces | Isolated per tenant |
+| Entities/Schema | Isolated per tenant |
+| Vector embeddings | Isolated per tenant |
+
+The runtime tenant context supports:
+- `tenant`: Target tenant identifier
+- `project`: Project scope within the tenant
+- `agent`: Agent name for this request
+- `agentDescription`: Human-readable agent role
+- `embedding`: Override embedding provider for this request
+
+See [03-contextual-registry.md](./03-contextual-registry.md#runtime-tenant-creation) for detailed API documentation.

@@ -7,6 +7,7 @@ from langchain.agents.middleware import dynamic_prompt, ModelRequest
 from ..types.config import ContextGraphConfig
 from ..types.data_model import DecisionTrace, Skill, ScoredDecisionTrace, SchemaOverview
 from .contextual_registry import ContextualRegistry
+from ..db.multi_tenant_store import RuntimeTenantContext
 from .schema_inspector import format_schema_for_prompt
 from ..utils.logger import create_logger
 
@@ -35,12 +36,21 @@ def create_prompt_injector(registry: ContextualRegistry, config: ContextGraphCon
         if not user_content:
             return config.base_system_prompt or ""
 
+        # Extract runtime tenant context from request
+        runtime_context = _extract_runtime_context(request)
+
         try:
-            context = registry.get_relevant_context(user_content)
+            context = registry.get_relevant_context(user_content, runtime_context)
             sections: list[str] = []
 
             if config.base_system_prompt:
                 sections.append(config.base_system_prompt)
+
+            # Add runtime metadata if present
+            if runtime_context and runtime_context.tenant:
+                runtime_meta = _format_runtime_metadata(runtime_context)
+                if runtime_meta:
+                    sections.append(runtime_meta)
 
             # Schema awareness
             if context.schema and context.schema.node_labels:
@@ -72,6 +82,48 @@ def create_prompt_injector(registry: ContextualRegistry, config: ContextGraphCon
             return config.base_system_prompt or ""
 
     return context_graph_prompt_injector
+
+
+def _extract_runtime_context(request: ModelRequest) -> RuntimeTenantContext | None:
+    """Extract runtime tenant context from the request."""
+    # LangChain passes runtime context via request.context
+    ctx = getattr(request, "context", None)
+    if not ctx:
+        return None
+
+    # Handle dict-like context
+    if isinstance(ctx, dict):
+        return RuntimeTenantContext(
+            tenant=ctx.get("tenant"),
+            project=ctx.get("project"),
+            agent=ctx.get("agent"),
+            agent_description=ctx.get("agent_description"),
+        )
+
+    # Handle object with attributes
+    return RuntimeTenantContext(
+        tenant=getattr(ctx, "tenant", None),
+        project=getattr(ctx, "project", None),
+        agent=getattr(ctx, "agent", None),
+        agent_description=getattr(ctx, "agent_description", None),
+    )
+
+
+def _format_runtime_metadata(ctx: RuntimeTenantContext) -> str:
+    """Format runtime metadata for injection into system prompt."""
+    lines = []
+    if ctx.tenant:
+        lines.append(f"Tenant: {ctx.tenant}")
+    if ctx.project:
+        lines.append(f"Project: {ctx.project}")
+    if ctx.agent:
+        lines.append(f"Agent: {ctx.agent}")
+    if ctx.agent_description:
+        lines.append(f"Agent description: {ctx.agent_description}")
+
+    if lines:
+        return "## Runtime Context\n" + "\n".join(lines)
+    return ""
 
 
 def _truncate(text: str, max_len: int) -> str:

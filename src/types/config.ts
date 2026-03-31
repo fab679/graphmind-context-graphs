@@ -1,4 +1,5 @@
 import type { EmbeddingProvider } from "../embeddings/provider.js";
+import type { InteropZodObject } from "@langchain/core/utils/types";
 import type { ContextSharingPolicy } from "./data-model.js";
 
 export interface GraphmindConnectionConfig {
@@ -43,6 +44,8 @@ export interface ContextGraphConfig {
   allowedAgents?: string[];
   embedding: EmbeddingConfig;
   observerModel?: string;
+  /** Optional runtime context schema for per-invocation middleware context. */
+  contextSchema?: InteropZodObject;
   vectorSearchLimit?: number;
   similarityThreshold?: number;
   baseSystemPrompt?: string;

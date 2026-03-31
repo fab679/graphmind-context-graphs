@@ -1,6 +1,6 @@
 {
   "name": "graphmind-context-graphs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Director's Commentary middleware for AI agents - captures decision traces, builds dynamic brain maps, and evolves institutional wisdom",
   "repository": {
     "type": "git",
@@ -37,6 +37,7 @@
     "example": "tsx examples/basic-context-graph.ts",
     "example:coding": "tsx examples/coding-agent.ts",
     "example:multi-agent": "tsx examples/multi-agent-shared.ts",
+    "example:runtime": "tsx examples/runtime-context.ts",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },

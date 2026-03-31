@@ -1,21 +1,26 @@
 import { createMiddleware } from "langchain";
+import type { InteropZodObject } from "@langchain/core/utils/types";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { ContextGraphConfig } from "../types/config.js";
 import type { ToolCall } from "../types/data-model.js";
 import type { ContextualRegistry } from "./contextual-registry.js";
+import type { RuntimeTenantContext } from "../db/multi-tenant-store.js";
+import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { ablationFilter, filterCriticalFacts } from "./ablation-filter.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 
 export function createReasoningExtractor(
   config: ContextGraphConfig,
   registry: ContextualRegistry,
-  observerModel: BaseChatModel | null
+  observerModel: BaseChatModel | null,
+  contextSchema?: InteropZodObject,
 ) {
   const logger = createLogger(config.debug);
 
   return createMiddleware({
     name: "ContextGraphReasoningExtractor",
+    contextSchema,
 
     wrapModelCall: async (request, handler) => {
       const response = await handler(request);
@@ -36,7 +41,12 @@ export function createReasoningExtractor(
         const messages = request.messages ?? [];
         const facts = extractFactsFromMessages(messages);
         const capturedToolCalls = extractToolCalls(messages);
-        logger.debug("Extracted %d fact(s), %d tool call(s) from %d message(s)", facts.length, capturedToolCalls.length, messages.length);
+        logger.debug(
+          "Extracted %d fact(s), %d tool call(s) from %d message(s)",
+          facts.length,
+          capturedToolCalls.length,
+          messages.length,
+        );
         const decision = content;
 
         try {
@@ -48,12 +58,13 @@ export function createReasoningExtractor(
             config,
             registry,
             observerModel,
-            logger
+            logger,
+            request.runtime?.context,
           );
         } catch (err) {
           logger.warn(
             "Failed to save decision trace: %s",
-            (err as Error).message
+            (err as Error).message,
           );
         }
       }
@@ -80,8 +91,7 @@ function extractFactsFromMessages(messages: unknown[]): string[] {
   for (const msg of messages) {
     const message = msg as any;
     const role = message._getType?.() ?? message.role ?? "";
-    const content =
-      typeof message.content === "string" ? message.content : "";
+    const content = typeof message.content === "string" ? message.content : "";
 
     if (role === "ai" || role === "assistant") {
       // Only extract reasoning from AI messages that have NO tool calls
@@ -150,28 +160,57 @@ async function saveDecisionTrace(
   config: ContextGraphConfig,
   registry: ContextualRegistry,
   observerModel: BaseChatModel | null,
-  logger: Logger
+  logger: Logger,
+  runtimeContext?: unknown,
 ): Promise<void> {
-  const isDiscovery = await registry.isDiscoveryMode();
+  // Build runtime tenant context from the runtime context
+  const runtime =
+    typeof runtimeContext === "object" && runtimeContext !== null
+      ? (runtimeContext as Record<string, unknown>)
+      : {};
+
+  const runtimeTenantContext: RuntimeTenantContext = {
+    tenant: typeof runtime.tenant === "string" ? runtime.tenant : undefined,
+    project: typeof runtime.project === "string" ? runtime.project : undefined,
+    agent: typeof runtime.agent === "string" ? runtime.agent : undefined,
+    agentDescription:
+      typeof runtime.agentDescription === "string"
+        ? runtime.agentDescription
+        : undefined,
+    embedding:
+      typeof runtime.embedding === "object" &&
+      runtime.embedding !== null &&
+      "provider" in runtime.embedding
+        ? (runtime.embedding as { provider: EmbeddingProvider; dimensions: number })
+        : undefined,
+  };
+
+  const isDiscovery = await registry.isDiscoveryMode(runtimeTenantContext);
 
   let criticalFacts = facts;
   let ablationScore: number | undefined;
 
   // Apply ablation filter unless in discovery mode
   if (!isDiscovery && observerModel) {
-    const results = await ablationFilter(facts, decision, observerModel, logger);
+    const results = await ablationFilter(
+      facts,
+      decision,
+      observerModel,
+      logger,
+    );
     const critical = filterCriticalFacts(results);
     criticalFacts = critical.map((r) => r.fact);
     ablationScore =
       critical.length > 0
-        ? critical.reduce((sum, r) => sum + r.confidence, 0) /
-          critical.length
+        ? critical.reduce((sum, r) => sum + r.confidence, 0) / critical.length
         : undefined;
   }
 
   // Extract intent from the first user message
   const userMessages = messages.filter(
-    (m: any) => (m._getType?.() ?? m.role) === "human" || (m._getType?.() ?? m.role) === "user"
+    (m: any) =>
+      (m._getType?.() ?? m.role) === "human" ||
+      (m._getType?.() ?? m.role) === "user",
   );
   const intentDescription =
     userMessages.length > 0
@@ -180,8 +219,27 @@ async function saveDecisionTrace(
         : "Unknown intent"
       : "Unknown intent";
 
+  const runtimeAgent =
+    typeof runtime.agent === "string" ? runtime.agent : undefined;
+  const runtimeDomain =
+    typeof runtime.domain === "string" ? runtime.domain : undefined;
+  const runtimeProject =
+    typeof runtime.project === "string" ? runtime.project : undefined;
+  const runtimeTenant =
+    typeof runtime.tenant === "string" ? runtime.tenant : undefined;
+  const runtimeEmbedding =
+    typeof runtime.embedding === "object" &&
+    runtime.embedding !== null &&
+    "provider" in runtime.embedding
+      ? (runtime.embedding as { provider: EmbeddingProvider }).provider
+      : undefined;
+
   // Use LLM for structured extraction if observer model is available
-  let constraints: { description: string; type: "blocker" | "permission" | "pivot"; createdAt: string }[];
+  let constraints: {
+    description: string;
+    type: "blocker" | "permission" | "pivot";
+    createdAt: string;
+  }[];
   let concepts: string[];
   let domain: string;
 
@@ -191,27 +249,34 @@ async function saveDecisionTrace(
       decision,
       criticalFacts,
       observerModel,
-      logger
+      logger,
     );
     constraints = extraction.constraints.map((c) => ({
       ...c,
       createdAt: new Date().toISOString(),
     }));
     concepts = extraction.concepts;
-    domain = config.domain ?? extraction.domain;
+    domain = runtimeDomain ?? config.domain ?? extraction.domain;
   } else {
     // Fallback to heuristic extraction — only create constraints from
     // facts that contain actual reasoning (not tool artifacts)
     constraints = criticalFacts
       .filter((fact) => fact.length > 20 && fact.length < 300)
-      .slice(0, 5)  // Cap at 5 constraints max
+      .slice(0, 5) // Cap at 5 constraints max
       .map((fact) => ({
         description: fact,
         type: classifyFact(fact),
         createdAt: new Date().toISOString(),
       }));
-    concepts = extractConceptsFallback(intentDescription, decision, criticalFacts);
-    domain = config.domain ?? inferDomainFallback(intentDescription, decision);
+    concepts = extractConceptsFallback(
+      intentDescription,
+      decision,
+      criticalFacts,
+    );
+    domain =
+      runtimeDomain ??
+      config.domain ??
+      inferDomainFallback(intentDescription, decision);
   }
 
   const trace = {
@@ -226,22 +291,23 @@ async function saveDecisionTrace(
       createdAt: new Date().toISOString(),
     },
     justification: {
-      description: criticalFacts.length > 0
-        ? criticalFacts.join("; ")
-        : buildJustificationSummary(intentDescription, capturedToolCalls),
+      description:
+        criticalFacts.length > 0
+          ? criticalFacts.join("; ")
+          : buildJustificationSummary(intentDescription, capturedToolCalls),
       confidence: isDiscovery ? 0.5 : (ablationScore ?? 0.5),
       ablationScore,
     },
     toolCalls: capturedToolCalls,
-    project: config.project,
-    tenant: config.tenant,
+    project: runtimeProject ?? config.project,
+    tenant: runtimeTenant ?? config.tenant,
     domain,
-    agent: config.agent,
+    agent: runtimeAgent ?? config.agent,
     concepts,
     status: "captured" as const,
   };
 
-  await registry.recordDecision(trace);
+  await registry.recordDecision(trace, runtimeEmbedding, runtimeTenantContext);
 }
 
 // ── LLM-Powered Extraction ──────────────────────────────────────────────────
@@ -281,7 +347,10 @@ Be precise. Quality over quantity.`;
 interface StructuredExtraction {
   domain: string;
   concepts: string[];
-  constraints: { description: string; type: "blocker" | "permission" | "pivot" }[];
+  constraints: {
+    description: string;
+    type: "blocker" | "permission" | "pivot";
+  }[];
   entities: { label: string; name: string }[];
 }
 
@@ -290,7 +359,7 @@ async function extractStructuredContext(
   decision: string,
   facts: string[],
   model: BaseChatModel,
-  logger: Logger
+  logger: Logger,
 ): Promise<StructuredExtraction> {
   const prompt = `## Agent Intent
 ${intent}
@@ -326,14 +395,18 @@ Extract the domain, concepts, constraints, and entities. Respond with valid JSON
     return {
       domain: typeof parsed.domain === "string" ? parsed.domain : "general",
       concepts: Array.isArray(parsed.concepts)
-        ? parsed.concepts.filter((c): c is string => typeof c === "string").slice(0, 10)
+        ? parsed.concepts
+            .filter((c): c is string => typeof c === "string")
+            .slice(0, 10)
         : [],
       constraints: Array.isArray(parsed.constraints)
         ? parsed.constraints
             .filter((c) => c && typeof c.description === "string")
             .map((c) => ({
               description: c.description,
-              type: (["blocker", "permission", "pivot"].includes(c.type) ? c.type : "pivot") as "blocker" | "permission" | "pivot",
+              type: (["blocker", "permission", "pivot"].includes(c.type)
+                ? c.type
+                : "pivot") as "blocker" | "permission" | "pivot",
             }))
         : facts.map((f) => ({ description: f, type: "pivot" as const })),
       entities: Array.isArray(parsed.entities)
@@ -349,7 +422,7 @@ Extract the domain, concepts, constraints, and entities. Respond with valid JSON
 function fallbackExtraction(
   intent: string,
   decision: string,
-  facts: string[]
+  facts: string[],
 ): StructuredExtraction {
   return {
     domain: inferDomainFallback(intent, decision),
@@ -391,15 +464,24 @@ function classifyFact(fact: string): "blocker" | "permission" | "pivot" {
 function extractConceptsFallback(
   intent: string,
   decision: string,
-  facts: string[]
+  facts: string[],
 ): string[] {
   const combined = `${intent} ${decision} ${facts.join(" ")}`.toLowerCase();
   const concepts: string[] = [];
 
   const patterns: [RegExp, string][] = [
-    [/\baccount\s*\w*\s*(lock|block|suspend)|lock\w*\s*(account|out)/i, "account-lockout"],
-    [/\bcan'?t\s*(log\s*in|sign\s*in)|login\s*(fail|error|issue)/i, "account-lockout"],
-    [/\bpassword\s*\w*\s*(reset|change|forgot)|forgot\w*\s*password/i, "password-reset"],
+    [
+      /\baccount\s*\w*\s*(lock|block|suspend)|lock\w*\s*(account|out)/i,
+      "account-lockout",
+    ],
+    [
+      /\bcan'?t\s*(log\s*in|sign\s*in)|login\s*(fail|error|issue)/i,
+      "account-lockout",
+    ],
+    [
+      /\bpassword\s*\w*\s*(reset|change|forgot)|forgot\w*\s*password/i,
+      "password-reset",
+    ],
     [/\brate\s*limit/i, "rate-limiting"],
     [/\b429\b|\btoo many requests/i, "rate-limiting"],
     [/\bbilling|payment|invoice|refund/i, "billing"],
@@ -428,13 +510,17 @@ function extractConceptsFallback(
 }
 
 /** Build a concise justification when no reasoning facts are available. */
-function buildJustificationSummary(intent: string, toolCalls: ToolCall[]): string {
+function buildJustificationSummary(
+  intent: string,
+  toolCalls: ToolCall[],
+): string {
   const parts: string[] = [];
   if (toolCalls.length > 0) {
     const toolNames = [...new Set(toolCalls.map((tc) => tc.name))];
     parts.push(`Used ${toolNames.join(", ")}`);
   }
-  const intentShort = intent.length > 80 ? intent.substring(0, 80) + "..." : intent;
+  const intentShort =
+    intent.length > 80 ? intent.substring(0, 80) + "..." : intent;
   parts.push(`to address: ${intentShort}`);
   return parts.join(" ");
 }
@@ -442,11 +528,24 @@ function buildJustificationSummary(intent: string, toolCalls: ToolCall[]): strin
 function inferDomainFallback(intent: string, decision: string): string {
   const combined = `${intent} ${decision}`.toLowerCase();
 
-  if (/\bapi\b|\bendpoint|\bsdk\b|\brate.?limit|\b429\b/.test(combined)) return "tech";
-  if (/\bbilling|\bpayment|\binvoice|\brefund|\bsubscription/.test(combined)) return "finance";
-  if (/\baccount|\blogin|\bpassword|\bauth|\block/.test(combined)) return "support";
-  if (/\blegal|\bcompliance|\bregulat|\bpolicy|\bcontract|\bliabilit/.test(combined)) return "legal";
-  if (/\bmedical|\bpatient|\bdiagnos|\btreatment|\bprescri|\bsymptom/.test(combined)) return "medical";
+  if (/\bapi\b|\bendpoint|\bsdk\b|\brate.?limit|\b429\b/.test(combined))
+    return "tech";
+  if (/\bbilling|\bpayment|\binvoice|\brefund|\bsubscription/.test(combined))
+    return "finance";
+  if (/\baccount|\blogin|\bpassword|\bauth|\block/.test(combined))
+    return "support";
+  if (
+    /\blegal|\bcompliance|\bregulat|\bpolicy|\bcontract|\bliabilit/.test(
+      combined,
+    )
+  )
+    return "legal";
+  if (
+    /\bmedical|\bpatient|\bdiagnos|\btreatment|\bprescri|\bsymptom/.test(
+      combined,
+    )
+  )
+    return "medical";
 
   return "general";
 }

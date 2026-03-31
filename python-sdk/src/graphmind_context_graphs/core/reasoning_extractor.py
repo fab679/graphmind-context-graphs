@@ -13,6 +13,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from ..types.config import ContextGraphConfig
 from ..types.data_model import DecisionTrace, Intent, Action, Justification, ToolCallRecord
 from .contextual_registry import ContextualRegistry
+from ..db.multi_tenant_store import RuntimeTenantContext
 from ..utils.logger import create_logger
 
 
@@ -55,15 +56,42 @@ class ReasoningExtractorMiddleware(AgentMiddleware):
             self._logger.debug("Extracted %d fact(s), %d tool call(s) from %d message(s)",
                                len(facts), len(captured_tools), len(messages))
 
+            # Extract runtime tenant context from request
+            runtime_context = self._extract_runtime_context(request)
+
             try:
                 _save_decision_trace(
                     facts, content, messages, captured_tools,
                     self._config, self._registry, self._observer_model, self._logger,
+                    runtime_context,
                 )
             except Exception as e:
                 self._logger.warning("Failed to save decision trace: %s", e)
 
         return response
+
+    def _extract_runtime_context(self, request: ModelRequest) -> RuntimeTenantContext | None:
+        """Extract runtime tenant context from the request."""
+        ctx = getattr(request, "context", None)
+        if not ctx:
+            return None
+
+        # Handle dict-like context
+        if isinstance(ctx, dict):
+            return RuntimeTenantContext(
+                tenant=ctx.get("tenant"),
+                project=ctx.get("project"),
+                agent=ctx.get("agent"),
+                agent_description=ctx.get("agent_description"),
+            )
+
+        # Handle object with attributes
+        return RuntimeTenantContext(
+            tenant=getattr(ctx, "tenant", None),
+            project=getattr(ctx, "project", None),
+            agent=getattr(ctx, "agent", None),
+            agent_description=getattr(ctx, "agent_description", None),
+        )
 
 
 def _extract_facts(messages: list) -> list[str]:
@@ -118,12 +146,12 @@ def _save_decision_trace(
     facts: list[str], decision: str, messages: list,
     tool_calls: list[ToolCallRecord], config: ContextGraphConfig,
     registry: ContextualRegistry, observer_model: BaseChatModel | None,
-    logger: Any,
+    logger: Any, runtime_context: RuntimeTenantContext | None = None,
 ) -> None:
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
-    is_discovery = registry.is_discovery_mode()
+    is_discovery = registry.is_discovery_mode(runtime_context)
 
     critical_facts = facts
     ablation_score = None
@@ -137,6 +165,11 @@ def _save_decision_trace(
             if isinstance(content, str) and content:
                 intent_desc = content
             break
+
+    # Extract runtime values from context or use config defaults
+    runtime_tenant = runtime_context.tenant if runtime_context else None
+    runtime_project = runtime_context.project if runtime_context else None
+    runtime_agent = runtime_context.agent if runtime_context else None
 
     # Use LLM extraction if available, otherwise heuristic
     if observer_model:
@@ -178,17 +211,17 @@ def _save_decision_trace(
             ablation_score=ablation_score,
         ),
         tool_calls=tool_calls,
-        project=config.project,
-        tenant=config.tenant,
+        project=runtime_project or config.project,
+        tenant=runtime_tenant or config.tenant,
         domain=domain,
-        agent=config.agent,
+        agent=runtime_agent or config.agent,
         concepts=concepts,
         status="captured",
         created_at=now,
         updated_at=now,
     )
 
-    registry.record_decision(trace)
+    registry.record_decision(trace, runtime_context)
 
 
 # ── LLM-Powered Extraction ──────────────────────────────────────────────────

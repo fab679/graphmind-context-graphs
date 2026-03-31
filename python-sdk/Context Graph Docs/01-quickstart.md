@@ -117,3 +117,53 @@ After one agent conversation, the graph contains:
 | `Tool` | Tools used during the conversation |
 
 Relationships link everything together: `HAS_INTENT`, `TOOK_ACTION`, `HAS_CONSTRAINT`, `BELONGS_TO_PROJECT`, `PRODUCED_BY`, `TAGGED_WITH`, `USED_TOOL`, `PRECEDENT_OF`, etc.
+
+## Runtime Tenant Creation (v0.3.0)
+
+> **NEW** — Dynamically create new tenants from runtime context without changing code.
+
+The Python SDK supports multi-tenant SaaS use cases where each customer needs isolated context graphs. Pass a different tenant in the request context, and the system automatically creates a new isolated graph.
+
+```python
+from graphmind_context_graphs import create_context_graph, ContextGraphConfig, EmbeddingConfig
+
+# Initialize once with a default/base tenant
+cg = create_context_graph(ContextGraphConfig(
+    tenant="default",
+    project="saas-app",
+    embedding=EmbeddingConfig(provider=my_embeddings, dimensions=1536),
+))
+
+# Create a single agent
+agent = create_agent(
+    "openai:gpt-4.1",
+    tools=cg.tools,
+    middleware=cg.middleware,
+)
+
+# Each customer request routes to their isolated tenant graph
+async def handle_customer_request(customer_id: str, message: str):
+    return await agent.invoke(
+        {"messages": [{"role": "user", "content": message}]},
+        {"context": {
+            "tenant": customer_id,      # Creates new graph if needed
+            "project": "main",
+            "agent": "support-agent",
+        }}
+    )
+
+# Customer A - gets their own isolated graph
+await handle_customer_request("customer-a", "I need help with billing")
+
+# Customer B - gets a separate isolated graph  
+await handle_customer_request("customer-b", "How do I reset my password?")
+```
+
+Each tenant gets complete data isolation via separate graph namespaces (`cg_customer-a`, `cg_customer-b`).
+
+The runtime context supports:
+- `tenant`: Target tenant (creates new graph if different from base)
+- `project`: Project scope within the tenant
+- `agent`: Agent name for this request
+- `agent_description`: Human-readable agent role
+- `embedding`: Override embedding provider for this request

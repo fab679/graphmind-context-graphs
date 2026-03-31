@@ -2,15 +2,28 @@
 
 The Contextual Registry is the semantic retrieval and storage layer of the context graph. It handles embedding generation, vector search, trace storage, precedent linking, and cold start detection.
 
+> **NEW: Runtime Tenant Support** — The registry now supports dynamic tenant switching via `RuntimeTenantContext`. When you pass a different tenant in the runtime context, the registry automatically creates and uses a new isolated graph for that tenant. See [Runtime Tenant Creation](#runtime-tenant-creation) below.
+
 ## Key Operations
 
-### `getRelevantContext(intentDescription)`
+### `getRelevantContext(intentDescription, runtimeEmbeddingProvider?, runtimeTenantContext?)`
 
 Retrieves all contextually relevant information for the current task. This is the primary read path -- called by the prompt injector before every model call.
 
 ```typescript
 const context = await registry.getRelevantContext("Deploy the API to production");
 // Returns: { pastTraces, rules, antiPatterns, skills, schema }
+```
+
+With runtime tenant override:
+
+```typescript
+const context = await registry.getRelevantContext(
+  "Deploy the API to production",
+  undefined, // use default embedding provider
+  { tenant: "customer-123", project: "production" } // runtime tenant context
+);
+// Automatically queries the graph for customer-123, creating it if needed
 ```
 
 Steps:
@@ -43,7 +56,7 @@ interface FormattedContext {
 }
 ```
 
-### `recordDecision(trace)`
+### `recordDecision(trace, runtimeEmbeddingProvider?, runtimeTenantContext?)`
 
 Saves a new decision trace with full embedding generation and automatic precedent linking.
 
@@ -60,6 +73,17 @@ const traceId = await registry.recordDecision({
 });
 ```
 
+With runtime tenant override:
+
+```typescript
+const traceId = await registry.recordDecision(
+  { /* trace data */ },
+  undefined,
+  { tenant: "customer-123", project: "my-project", agent: "support-agent" }
+);
+// Automatically saves to customer-123's isolated graph
+```
+
 Steps:
 
 1. **Generates embeddings** for the combined trace text, intent, each constraint, and action
@@ -73,7 +97,7 @@ Steps:
 3. **Runs semantic generalization** -- searches for similar past traces and creates precedent links
 4. **Resets discovery mode cache** so the next check reflects the new trace
 
-### `isDiscoveryMode()`
+### `isDiscoveryMode(runtimeTenantContext?)`
 
 Detects cold start conditions. Returns `true` when no traces exist for the current project.
 
@@ -83,9 +107,92 @@ if (await registry.isDiscoveryMode()) {
 }
 ```
 
-The result is cached until `recordDecision()` is called, avoiding repeated database queries.
+With runtime tenant context:
 
-## Semantic Generalization
+```typescript
+if (await registry.isDiscoveryMode({ tenant: "customer-123", project: "onboarding" })) {
+  // First run for this specific customer
+}
+```
+
+The result is cached per tenant until `recordDecision()` is called for that tenant, avoiding repeated database queries.
+
+## Runtime Tenant Creation
+
+The registry supports dynamic tenant switching through `RuntimeTenantContext`. When you pass a different tenant than the base configuration, the registry automatically:
+
+1. **Creates a new store** for that tenant (if it doesn't exist)
+2. **Bootstraps the schema** for the tenant's isolated graph
+3. **Queries/saves** to the correct tenant's graph
+
+### RuntimeTenantContext Interface
+
+```typescript
+interface RuntimeTenantContext {
+  tenant?: string;           // Target tenant (creates new graph if different from base)
+  project?: string;          // Project scope within the tenant
+  agent?: string;          // Agent name for this request
+  agentDescription?: string; // Human-readable agent role
+  embedding?: {            // Optional: override embedding provider
+    provider: EmbeddingProvider;
+    dimensions: number;
+  };
+}
+```
+
+### Usage in Middleware
+
+The middleware automatically extracts runtime tenant context from the request:
+
+```typescript
+// Agent initialized with base tenant
+const cg = await createContextGraph({
+  tenant: "base-tenant",
+  project: "base-project",
+  embedding: { provider, dimensions: 1536 },
+});
+
+const agent = createAgent({
+  model: "openai:gpt-4.1",
+  tools: cg.tools,
+  middleware: cg.middleware,
+});
+
+// Request with different tenant automatically creates new graph
+await agent.invoke(
+  { messages: [{ role: "user", content: "Hello" }] },
+  {
+    context: {
+      tenant: "customer-123",      // New tenant created on-demand
+      project: "customer-project",
+      agent: "support-agent",
+    },
+  }
+);
+```
+
+### Multi-Tenant SaaS Use Case
+
+Perfect for SaaS applications where each customer needs isolated context:
+
+```typescript
+// Single ContextGraphInstance handles all tenants
+const cg = await createContextGraph({
+  tenant: "default",
+  project: "saas-app",
+  embedding: { provider, dimensions: 1536 },
+});
+
+// Each request routes to the correct tenant's graph
+async function handleRequest(customerId: string, message: string) {
+  return await agent.invoke(
+    { messages: [{ role: "user", content: message }] },
+    { context: { tenant: customerId, project: "main" } }
+  );
+}
+```
+
+Each tenant gets complete data isolation via separate graph namespaces (e.g., `cg_customer123`, `cg_customer456`).
 
 When a new trace is saved, the registry searches for similar past traces. If similarity exceeds the configured threshold (default: `0.7`), it creates a `PRECEDENT_OF` edge between the new trace and its predecessors.
 

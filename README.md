@@ -26,6 +26,7 @@ Agents don't just remember — they build a map of their own brain over time.
 - **Skills (Progressive Disclosure)** — Auto-synthesized skill bundles agents can discover and load on-demand
 - **Multi-Agent** — Configurable context sharing (shared, isolated, selective)
 - **Multi-Tenant** — Full data isolation per tenant via Graphmind graph namespaces
+- **Runtime Tenant Creation** — Dynamically create new tenants from runtime context without code changes
 - **Vector Search** — Semantic similarity retrieval via Graphmind SEARCH clause
 
 ## Installation
@@ -197,6 +198,50 @@ const techCG = await createContextGraph({
 | `isolated` | Agents see only their own traces | Privacy-sensitive domains |
 | `selective` | Own + allowed agents' traces | Controlled cross-domain learning |
 
+## Runtime Tenant Creation
+
+Dynamically create new tenants from runtime context without changing code. Perfect for multi-tenant SaaS applications where each customer needs isolated context graphs.
+
+```typescript
+// Initialize with a base tenant
+const cg = await createContextGraph({
+  tenant: "base-tenant",
+  project: "base-project",
+  embedding: { provider, dimensions: 1536 },
+});
+
+const agent = createAgent({
+  model: "openai:gpt-4.1",
+  tools: cg.tools,
+  middleware: cg.middleware,
+});
+
+// Request 1: Uses base tenant (base-tenant)
+await agent.invoke(
+  { messages: [{ role: "user", content: "Hello" }] },
+  { context: { tenant: "base-tenant", project: "base-project" } }
+);
+
+// Request 2: Automatically creates new tenant context graph!
+await agent.invoke(
+  { messages: [{ role: "user", content: "Hello" }] },
+  {
+    context: {
+      tenant: "customer-123",     // New tenant created on-demand
+      project: "customer-project",  // New project created
+      agent: "support-agent",     // Optional agent override
+    },
+  }
+);
+```
+
+The runtime tenant context supports:
+- `tenant`: Creates isolated graph namespace for the tenant
+- `project`: Project scope within the tenant
+- `agent`: Agent name for this request
+- `agentDescription`: Human-readable agent role
+- `embedding`: Override embedding provider for this request
+
 ## Configuration
 
 ```typescript
@@ -238,6 +283,9 @@ npm run example:coding
 
 # Multi-agent shared context
 npm run example:multi-agent
+
+# Runtime tenant creation (dynamic multi-tenant)
+npm run example:runtime
 ```
 
 ## Documentation

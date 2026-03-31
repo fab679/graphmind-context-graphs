@@ -1,14 +1,26 @@
 import { config as loadDotenv } from "dotenv";
 import { initChatModel } from "langchain";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { ContextGraphConfig, ResolvedContextGraphConfig } from "./types/config.js";
+import type { InteropZodObject } from "@langchain/core/utils/types";
+import type {
+  ContextGraphConfig,
+  ResolvedContextGraphConfig,
+} from "./types/config.js";
 import { GraphmindStore } from "./db/client.js";
+import { MultiTenantGraphmindStore } from "./db/multi-tenant-store.js";
 import { ContextualRegistry } from "./core/contextual-registry.js";
 import { KnowledgeLifecycleManager } from "./core/knowledge-lifecycle.js";
 import { createReasoningExtractor } from "./core/reasoning-extractor.js";
 import { createPromptInjector } from "./core/prompt-injector.js";
-import { createSchemaInspectorTool, createGraphQueryTool } from "./core/schema-inspector.js";
-import { createEntityTool, createRelationshipTool, createFindEntitiesTool } from "./core/entity-builder.js";
+import {
+  createSchemaInspectorTool,
+  createGraphQueryTool,
+} from "./core/schema-inspector.js";
+import {
+  createEntityTool,
+  createRelationshipTool,
+  createFindEntitiesTool,
+} from "./core/entity-builder.js";
 
 export interface ContextGraphInstance {
   /** Middleware array to pass to createAgent(). */
@@ -21,6 +33,10 @@ export interface ContextGraphInstance {
   lifecycle: KnowledgeLifecycleManager;
   /** Direct access to the Graphmind store. */
   store: GraphmindStore;
+  /** Multi-tenant store manager for runtime tenant switching. */
+  multiTenantStore: MultiTenantGraphmindStore;
+  /** Optional runtime context schema exposed for agent creation. */
+  contextSchema?: InteropZodObject;
 }
 
 /**
@@ -37,19 +53,13 @@ function resolveConfig(config: ContextGraphConfig): ResolvedContextGraphConfig {
     "http://localhost:8080";
 
   const token =
-    config.graphmind?.token ??
-    process.env.GRAPHMIND_TOKEN ??
-    undefined;
+    config.graphmind?.token ?? process.env.GRAPHMIND_TOKEN ?? undefined;
 
   const username =
-    config.graphmind?.username ??
-    process.env.GRAPHMIND_USERNAME ??
-    undefined;
+    config.graphmind?.username ?? process.env.GRAPHMIND_USERNAME ?? undefined;
 
   const password =
-    config.graphmind?.password ??
-    process.env.GRAPHMIND_PASSWORD ??
-    undefined;
+    config.graphmind?.password ?? process.env.GRAPHMIND_PASSWORD ?? undefined;
 
   return {
     ...config,
@@ -79,13 +89,18 @@ function resolveConfig(config: ContextGraphConfig): ResolvedContextGraphConfig {
  * ```
  */
 export async function createContextGraph(
-  config: ContextGraphConfig
+  config: ContextGraphConfig,
 ): Promise<ContextGraphInstance> {
   const resolved = resolveConfig(config);
 
-  // Initialize database store and bootstrap schema
-  const store = new GraphmindStore(resolved);
-  await store.initialize();
+  // Initialize multi-tenant store manager
+  const multiTenantStore = new MultiTenantGraphmindStore(
+    resolved,
+    resolved.embedding.provider,
+  );
+
+  // Get or create base store for initial tenant
+  const store = await multiTenantStore.getStoreForRuntime();
 
   // Initialize observer model for ablation filtering and structured extraction
   let observerModel: BaseChatModel | null = null;
@@ -93,20 +108,25 @@ export async function createContextGraph(
     observerModel = await initChatModel(resolved.observerModel);
   }
 
-  // Create core components
+  // Create core components with multi-tenant store
   const registry = new ContextualRegistry(
-    store,
+    multiTenantStore,
     resolved.embedding.provider,
-    resolved
+    resolved,
   );
   const lifecycle = new KnowledgeLifecycleManager(store, resolved);
 
   // Create middleware
-  const promptInjector = createPromptInjector(registry, resolved);
+  const promptInjector = createPromptInjector(
+    registry,
+    resolved,
+    resolved.contextSchema,
+  );
   const reasoningExtractor = createReasoningExtractor(
     resolved,
     registry,
-    observerModel
+    observerModel,
+    resolved.contextSchema,
   );
 
   // Create agent tools for brain-mapping
@@ -124,6 +144,8 @@ export async function createContextGraph(
     registry,
     lifecycle,
     store,
+    multiTenantStore,
+    contextSchema: resolved.contextSchema,
   };
 }
 
@@ -170,16 +192,36 @@ export type {
   PruneOptions,
 } from "./types/lifecycle.js";
 export type { EmbeddingProvider } from "./embeddings/provider.js";
+export {
+  LangChainEmbeddingAdapter,
+  type LangChainEmbeddings,
+  KNOWN_EMBEDDING_DIMENSIONS,
+  getKnownEmbeddingDimensions,
+} from "./embeddings/langchain-adapter.js";
 export type { AblationResult } from "./core/ablation-filter.js";
 
 // Re-export classes for advanced usage
 export { GraphmindStore } from "./db/client.js";
+export { MultiTenantGraphmindStore } from "./db/multi-tenant-store.js";
+export type { RuntimeTenantContext } from "./db/multi-tenant-store.js";
 export { ContextualRegistry } from "./core/contextual-registry.js";
 export { KnowledgeLifecycleManager } from "./core/knowledge-lifecycle.js";
 export { createReasoningExtractor } from "./core/reasoning-extractor.js";
 export { createPromptInjector } from "./core/prompt-injector.js";
 export { ablationFilter, filterCriticalFacts } from "./core/ablation-filter.js";
 export { DEFAULT_LOGIC_MAPPINGS } from "./types/logic-classes.js";
-export { createSkillTool, createListSkillsTool, formatSkillAsMarkdown } from "./core/skill-tool.js";
-export { createSchemaInspectorTool, createGraphQueryTool, formatSchemaForPrompt } from "./core/schema-inspector.js";
-export { createEntityTool, createRelationshipTool, createFindEntitiesTool } from "./core/entity-builder.js";
+export {
+  createSkillTool,
+  createListSkillsTool,
+  formatSkillAsMarkdown,
+} from "./core/skill-tool.js";
+export {
+  createSchemaInspectorTool,
+  createGraphQueryTool,
+  formatSchemaForPrompt,
+} from "./core/schema-inspector.js";
+export {
+  createEntityTool,
+  createRelationshipTool,
+  createFindEntitiesTool,
+} from "./core/entity-builder.js";

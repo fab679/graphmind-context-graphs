@@ -5,6 +5,9 @@ import type { EmbeddingProvider } from "../../../src/embeddings/provider.js";
 
 function createMockStore() {
   return {
+    getGraphName: vi.fn().mockReturnValue("cg_test"),
+    getTenant: vi.fn().mockReturnValue("test"),
+    getProject: vi.fn().mockReturnValue("test_project"),
     countTraces: vi.fn().mockResolvedValue(0),
     findSimilarTraces: vi.fn().mockResolvedValue([]),
     getActiveRules: vi.fn().mockResolvedValue([]),
@@ -19,6 +22,13 @@ function createMockStore() {
     saveDecisionTrace: vi.fn().mockResolvedValue("trace-1"),
     createPrecedentLink: vi.fn().mockResolvedValue(undefined),
     getTraceById: vi.fn().mockResolvedValue(null),
+    ensureConcept: vi.fn().mockResolvedValue(undefined),
+  } as any;
+}
+
+function createMockMultiTenantStore(mockStore: any) {
+  return {
+    getStoreForRuntime: vi.fn().mockResolvedValue(mockStore),
   } as any;
 }
 
@@ -50,13 +60,15 @@ function createTestConfig(): ContextGraphConfig {
 describe("ContextualRegistry", () => {
   let registry: ContextualRegistry;
   let store: ReturnType<typeof createMockStore>;
+  let multiTenantStore: ReturnType<typeof createMockMultiTenantStore>;
   let embeddingProvider: EmbeddingProvider;
 
   beforeEach(() => {
     store = createMockStore();
+    multiTenantStore = createMockMultiTenantStore(store);
     embeddingProvider = createMockEmbeddingProvider();
     registry = new ContextualRegistry(
-      store,
+      multiTenantStore,
       embeddingProvider,
       createTestConfig()
     );

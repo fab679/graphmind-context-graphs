@@ -11,6 +11,7 @@ from .types.config import ContextGraphConfig, ResolvedContextGraphConfig, Graphm
 from .types.data_model import *  # noqa: F401, F403
 from .types.lifecycle import *  # noqa: F401, F403
 from .db.client import GraphmindStore
+from .db.multi_tenant_store import MultiTenantGraphmindStore, RuntimeTenantContext
 from .core.contextual_registry import ContextualRegistry
 from .core.knowledge_lifecycle import KnowledgeLifecycleManager
 from .core.prompt_injector import create_prompt_injector
@@ -19,6 +20,12 @@ from .core.schema_inspector import create_schema_inspector_tool, create_graph_qu
 from .core.entity_builder import create_entity_tool, create_relationship_tool, create_find_entities_tool
 from .core.skill_tool import create_skill_tool, create_list_skills_tool, format_skill_as_markdown
 from .embeddings.provider import EmbeddingProvider
+from .embeddings.langchain_adapter import (
+    LangChainEmbeddingAdapter,
+    LangChainEmbeddings,
+    KNOWN_EMBEDDING_DIMENSIONS,
+    get_known_embedding_dimensions,
+)
 
 
 @dataclass
@@ -29,6 +36,7 @@ class ContextGraphInstance:
     registry: ContextualRegistry
     lifecycle: KnowledgeLifecycleManager
     store: GraphmindStore
+    multi_tenant_store: MultiTenantGraphmindStore
 
 
 def create_context_graph(config: ContextGraphConfig) -> ContextGraphInstance:
@@ -57,15 +65,22 @@ def create_context_graph(config: ContextGraphConfig) -> ContextGraphInstance:
     """
     resolved = _resolve_config(config)
 
-    store = GraphmindStore(resolved)
-    store.initialize()
+    # Initialize multi-tenant store manager
+    multi_tenant_store = MultiTenantGraphmindStore(
+        resolved,
+        resolved.embedding.provider,
+    )
+
+    # Get or create base store for initial tenant
+    store = multi_tenant_store.get_store_for_runtime()
 
     observer_model = None
     if resolved.observer_model:
         from langchain.chat_models import init_chat_model
         observer_model = init_chat_model(resolved.observer_model)
 
-    registry = ContextualRegistry(store, resolved.embedding.provider, resolved)
+    # Create core components with multi-tenant store
+    registry = ContextualRegistry(multi_tenant_store, resolved.embedding.provider, resolved)
     lifecycle = KnowledgeLifecycleManager(store, resolved)
 
     prompt_injector = create_prompt_injector(registry, resolved)
@@ -85,6 +100,7 @@ def create_context_graph(config: ContextGraphConfig) -> ContextGraphInstance:
         registry=registry,
         lifecycle=lifecycle,
         store=store,
+        multi_tenant_store=multi_tenant_store,
     )
 
 
